@@ -247,9 +247,11 @@ class Simulation:
             # ==============================
 
             self.referee_check(turn)
-            self.perform_gate.set()
+
             if renderer:
                 renderer.checkpoint("4 - Referee Check", turn, ingest_results=True, details=["Validating intentions..."])
+
+            self.perform_gate.set()
 
             # ==============================
             # PHASE 5: PERFORM
@@ -483,9 +485,9 @@ class PygameRenderer:
                 elif event.key == pygame.K_RIGHT:
                     self._advance_requested = True
                 elif event.key == pygame.K_UP:
-                    self.speed = min(4.0, self.speed + 0.1)
+                    self.speed = min(4.0, self.speed + 0.05)
                 elif event.key == pygame.K_DOWN:
-                    self.speed = max(0.1, self.speed - 0.1)
+                    self.speed = max(0.05, self.speed - 0.05)
                 elif event.key == pygame.K_r:
                     self._restart_requested = True
 
