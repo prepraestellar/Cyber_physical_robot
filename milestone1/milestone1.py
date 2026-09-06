@@ -209,31 +209,62 @@ class Simulation:
             
             self.perform_gate.clear()
 
+            # ==============================
+            # PHASE 1: READ
+            # ==============================
+
             self.barrier_read.wait()
             if renderer:
-                renderer.checkpoint("1 - read messages", turn)
+                details = [f"R{r.id}: Inbox has {len(r.messages_this_turn)} msgs" for r in self.robots if r.messages_this_turn][:6]
+                if not details: details = ["All inboxes are empty"]
+                renderer.checkpoint("1 - Read Messages", turn, details=details)
+
+            # ==============================
+            # PHASE 2: SENSE
+            # ==============================
 
             self.barrier_sense.wait()
             if renderer:
-                renderer.checkpoint("2 - sense environment", turn)
+                details = []
+                for r in self.robots:
+                    if r._sensed.get("target_ahead"): details.append(f"R{r.id}: Sees Target!")
+                    elif r._sensed.get("wall_ahead"): details.append(f"R{r.id}: Sees Wall!")
+                if not details: details = ["Scanning area... Clear."]
+                renderer.checkpoint("2 - Sense Environment", turn, details=details[:6])
+
+            # ==============================
+            # PHASE 3: DECIDE
+            # ==============================
 
             self.barrier_decide.wait()
             if renderer:
-                renderer.checkpoint("3 - decide action", turn)
+                acts = [f"R{r.id} planned {r._decided_action.name}" for r in self.robots if r._decided_action != Action.IDLE]
+                renderer.checkpoint("3 - Decide Action", turn, details=acts[:6] or ["All robots are IDLE"])
 
             # --- referee runs here: single-threaded, before ANY robot acts ---
+            # ==============================
+            # PHASE 4: REFEREE CHECK
+            # ==============================
+
             self.referee_check(turn)
             self.perform_gate.set()
             if renderer:
-                renderer.checkpoint("4 - referee check", turn, ingest_results=True)
+                renderer.checkpoint("4 - Referee Check", turn, ingest_results=True, details=["Validating all proposed actions..."])
 
+            # ==============================
+            # PHASE 5: PERFORM
+            # ==============================
             self.barrier_perform.wait()
             if renderer:
-                renderer.checkpoint("5 - perform action", turn)
+                renderer.checkpoint("5 - Perform Action", turn, details=["Actions executed on grid."])
 
+            # ==============================
+            # PHASE 6: SEND
+            # ==============================
             self.barrier_send.wait()
             if renderer:
-                renderer.checkpoint("6 - send messages", turn)
+                details = [f"R{r.id} broadcasting state..." for r in self.robots][:6]
+                renderer.checkpoint("6 - Send Messages", turn, details=details)
 
         for r in self.robots:
             r.join()
@@ -262,6 +293,7 @@ class Robot(threading.Thread):
         self.messages_this_turn = []
         self.turn = 0
         self._decided_action = Action.IDLE
+        self._sensed = {}
 
     def read_messages(self):
         self.messages_this_turn = []
@@ -269,10 +301,26 @@ class Robot(threading.Thread):
             self.messages_this_turn.append(self.inbox.get_nowait())
 
     def sense(self):
-        pass  # not needed for the scripted Milestone-1 demo
+        # ลืมตาดูสภาพแวดล้อม และบันทึกข้อมูลไว้ในสมอง (self._sensed)
+        dx, dy = self.facing.delta()
+        front = (self.position[0] + dx, self.position[1] + dy)
+        self._sensed = {
+            "target_ahead": self.sim.world.has_target(front) if self.sim.world.in_bounds(front) else False,
+            "robots_ahead": [rid for rid in self.sim.world.robots_at(front) if rid != self.id],
+            "robots_here": [rid for rid in self.sim.world.robots_at(self.position) if rid != self.id],
+            "wall_ahead": not self.sim.world.in_bounds(front) # ตรวจจับกำแพง!
+        }
 
     def decide(self):
-        self._decided_action = self.script.get(self.turn, Action.IDLE)
+        action = self.script.get(self.turn, Action.IDLE)
+                
+        # --- DYNAMIC COLLISION AVOIDANCE ---
+        # ถ่ายทอดความฉลาด: ถ้าในสคริปต์สั่งให้เดินหน้า แต่ตา (sensed) เห็นกำแพง
+        # ให้เปลี่ยนการตัดสินใจเป็น "สุ่มเลี้ยวซ้ายหรือขวาแทน" 
+        if action == Action.MOVE_FORWARD and self._sensed.get("wall_ahead"):
+            action = random.choice([Action.TURN_LEFT, Action.TURN_RIGHT])
+                    
+        self._decided_action = action
         self.sim.decisions[self.id] = Decision(self.id, self._decided_action, self.position)
 
     def perform(self):
@@ -328,11 +376,8 @@ def parse_path(path_str):
     F = เดินหน้า, L = เลี้ยวซ้าย, R = เลี้ยวขวา, P = หยิบเป้าหมาย, - = ยืนนิ่งรอคิว (IDLE)
     """
     mapping = {
-        'F': Action.MOVE_FORWARD,
-        'L': Action.TURN_LEFT,
-        'R': Action.TURN_RIGHT,
-        'P': Action.PICKUP,
-        '-': Action.IDLE
+            'F': Action.MOVE_FORWARD, 'L': Action.TURN_LEFT, 
+            'R': Action.TURN_RIGHT, 'P': Action.PICKUP, '-': Action.IDLE
     }
     return {turn: mapping[char] for turn, char in enumerate(path_str.replace(' ', ''))}
 
@@ -351,43 +396,20 @@ def build_milestone1_scenario():
     world.maybe_generate_random_targets()
 
     robots_config = [
-        # ====================================================================
-        # THE ACTORS (1-7): เดินลาดตระเวนตลอดเวลา จนกว่าจะถึงคิวตัวเอง
-        # ====================================================================
+        # THE ACTORS (1-7): เดินลาดตระเวนจนถึงคิว
+        dict(robot_id=1, start_pos=(1, 3), start_facing=Direction.EAST, script=parse_path(pace(2) + "F F P " + pace(5))),
+        dict(robot_id=2, start_pos=(3, 1), start_facing=Direction.SOUTH, script=parse_path(pace(2) + "F F P " + pace(5))),
+        dict(robot_id=3, start_pos=(7, 4), start_facing=Direction.NORTH, script=parse_path(pace(3) + "F F P " + pace(5))),
+        dict(robot_id=4, start_pos=(2, 9), start_facing=Direction.NORTH, script=parse_path(pace(4) + "F F P " + pace(5))),
+        dict(robot_id=5, start_pos=(5, 7), start_facing=Direction.EAST, script=parse_path(pace(5) + "F F P " + pace(5))),
+        dict(robot_id=6, start_pos=(7, 9), start_facing=Direction.NORTH, script=parse_path(pace(5) + "F F P " + pace(5))),
+        dict(robot_id=7, start_pos=(9, 7), start_facing=Direction.WEST, script=parse_path(pace(5) + "F F P " + pace(5))),
         
-        # [Turn 15] Case 1: VALID (2 ตัวหยิบพร้อมกันที่ 3,3)
-        dict(robot_id=1, start_pos=(1, 3), start_facing=Direction.EAST,
-             script=parse_path(pace(2) + "F F P " + pace(5))),
-        dict(robot_id=2, start_pos=(3, 1), start_facing=Direction.SOUTH,
-             script=parse_path(pace(2) + "F F P " + pace(5))),
-
-        # [Turn 21] Case 2: ILLEGAL (หยิบอากาศที่ 7,2)
-        dict(robot_id=3, start_pos=(7, 4), start_facing=Direction.NORTH,
-             script=parse_path(pace(3) + "F F P " + pace(5))),
-
-        # [Turn 27] Case 3: ILLEGAL (มาตัวเดียวที่ 2,7)
-        dict(robot_id=4, start_pos=(2, 9), start_facing=Direction.NORTH,
-             script=parse_path(pace(4) + "F F P " + pace(5))),
-
-        # [Turn 33] Case 4: ILLEGAL (มา 3 ตัวแย่งกันที่ 7,7)
-        dict(robot_id=5, start_pos=(5, 7), start_facing=Direction.EAST,
-             script=parse_path(pace(5) + "F F P " + pace(5))),
-        dict(robot_id=6, start_pos=(7, 9), start_facing=Direction.NORTH,
-             script=parse_path(pace(5) + "F F P " + pace(5))),
-        dict(robot_id=7, start_pos=(9, 7), start_facing=Direction.WEST,
-             script=parse_path(pace(5) + "F F P " + pace(5))),
-
-        # ====================================================================
-        # THE EXTRAS (8-10): ตัวประกอบเดินอิสระ (Ghosts)
-        # ====================================================================
-        dict(robot_id=8, start_pos=(0, 0), start_facing=Direction.EAST,
-             script=parse_path(("F" * 9 + "R") * 15)),
-        dict(robot_id=9, start_pos=(4, 4), start_facing=Direction.NORTH,
-             script=parse_path(("F F L F F L F F L F F L") * 10)),
-        dict(robot_id=10, start_pos=(9, 0), start_facing=Direction.SOUTH,
-             script=parse_path(("F F R F F L") * 15)),
+        # THE EXTRAS (8-10): เดินป่วน + ลองสั่งเดินชนกำแพงดู (ตัว F รัวๆ) เพื่อดูฟีเจอร์หลบกำแพงอัตโนมัติ
+        dict(robot_id=8, start_pos=(0, 0), start_facing=Direction.EAST, script=parse_path(("F" * 20))), # สั่งเดินเกินจอ มันจะเลี้ยวหลบเอง!
+        dict(robot_id=9, start_pos=(4, 4), start_facing=Direction.NORTH, script=parse_path(("F F L F F L F F L F F L") * 10)),
+        dict(robot_id=10, start_pos=(9, 0), start_facing=Direction.SOUTH, script=parse_path(("F" * 20))),
     ]
-    
     return Simulation(robots_config, world, max_turns=50)
 
 
@@ -398,7 +420,7 @@ def build_milestone1_scenario():
 CELL = 50
 MARGIN = 30
 GRID_PX = GRID_SIZE * CELL
-SIDEBAR_W = 340
+SIDEBAR_W = 380
 WIN_W = MARGIN * 2 + GRID_PX + SIDEBAR_W
 WIN_H = MARGIN * 2 + GRID_PX
 
@@ -440,6 +462,7 @@ class PygameRenderer:
         self.turn = 0
         self.flashes = []          # list of (cell, color, start_time)
         self.log_lines = []
+        self.phase_details = [] 
         self.valid_count = 0
         self.illegal_count = 0
         self._advance_requested = False
@@ -471,9 +494,10 @@ class PygameRenderer:
         sys.exit(0)
 
     # ---- called by Simulation.run() between phases -----------------
-    def checkpoint(self, label, turn, ingest_results=False):
+    def checkpoint(self, label, turn, ingest_results=False, details=None):
         self.phase_label = label
         self.turn = turn
+        self.phase_details = details or []
         if ingest_results:
             self._ingest_referee_results(turn)
 
@@ -600,10 +624,17 @@ class PygameRenderer:
         line(f"speed: {self.speed:.2f} turns/s   ({'paused' if self.paused else 'playing'})",
              COLOR_TEXT_DIM, self.font_mono, 26)
 
-        line(f"valid: {self.valid_count}    illegal: {self.illegal_count}", COLOR_TEXT, self.font, 28)
+        line(f"valid: {self.valid_count}    illegal: {self.illegal_count}", COLOR_TEXT, self.font, 26)
+        
+        # --- UI อัปเดตใหม่: แสดงรายละเอียดของแต่ละ Phase ---
+        line("Current Phase Log:", COLOR_TEXT_DIM, self.font_small, 20)
+        for d in getattr(self, "phase_details", []):
+            line("  " + d, (170, 180, 200), self.font_small, 16)
 
-        line("referee log", COLOR_TEXT_DIM, self.font_small, 20)
-        for text, color in self.log_lines[-9:]:
+        # ขยับ Log เก่าลงมาด้านล่าง
+        y = panel.bottom - 110 
+        line("Referee Log:", COLOR_TEXT_DIM, self.font_small, 20)
+        for text, color in self.log_lines[-4:]:
             surf = self.font_small.render(text, True, color)
             self.screen.blit(surf, (x0, y))
             y += 18
