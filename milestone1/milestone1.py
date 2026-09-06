@@ -302,30 +302,75 @@ class Robot(threading.Thread):
             self.sim.barrier_send.wait()
 
 
+# def build_milestone1_scenario():
+#     world = World(GRID_SIZE)
+#     world.add_target((2, 2))
+#     world.add_target((2, 7))
+#     world.add_target((7, 7))
+#     # (7, 2) deliberately left empty -> triggers the "empty cell" case.
+
+#     robots_config = [
+#         dict(robot_id=1, start_pos=(1, 2), start_facing=Direction.EAST,
+#              script={0: Action.MOVE_FORWARD, 1: Action.PICKUP}),
+#         dict(robot_id=2, start_pos=(2, 1), start_facing=Direction.SOUTH,
+#              script={0: Action.MOVE_FORWARD, 1: Action.PICKUP}),
+#         dict(robot_id=3, start_pos=(6, 2), start_facing=Direction.EAST,
+#              script={0: Action.MOVE_FORWARD, 1: Action.PICKUP}),
+#         dict(robot_id=4, start_pos=(1, 7), start_facing=Direction.EAST,
+#              script={0: Action.MOVE_FORWARD, 1: Action.PICKUP}),
+#         dict(robot_id=5, start_pos=(6, 7), start_facing=Direction.EAST,
+#              script={0: Action.MOVE_FORWARD, 1: Action.PICKUP}),
+#         dict(robot_id=6, start_pos=(7, 6), start_facing=Direction.SOUTH,
+#              script={0: Action.MOVE_FORWARD, 1: Action.PICKUP}),
+#         dict(robot_id=7, start_pos=(8, 7), start_facing=Direction.WEST,
+#              script={0: Action.MOVE_FORWARD, 1: Action.PICKUP}),
+#     ]
+#     return Simulation(robots_config, world, max_turns=2)
+
 def build_milestone1_scenario():
     world = World(GRID_SIZE)
-    world.add_target((2, 2))
-    world.add_target((2, 7))
-    world.add_target((7, 7))
-    # (7, 2) deliberately left empty -> triggers the "empty cell" case.
+    # วาง Target ไว้ 3 จุดสำหรับแต่ละเคส
+    world.add_target((2, 2))  # สำหรับ Case 1 (Valid)
+    # (7, 2) จงใจไม่วาง Target เพื่อเทส Case 2 (Empty Cell)
+    world.add_target((2, 7))  # สำหรับ Case 3 (1 Robot)
+    world.add_target((7, 7))  # สำหรับ Case 4 (3 Robots)
 
+    # จัดตารางเวลา (Script) ให้หุ่นยนต์แต่ละกลุ่มทำงานคนละ Turn กัน
+    # หากยังไม่ถึง Turn ของตัวเอง หุ่นยนต์จะทำสถานะ Action.IDLE (ยืนรอ) โดยอัตโนมัติ
     robots_config = [
+        # =========================================================
+        # [Turn 0-1] Scenario 1: VALID pickup (หุ่น 2 ตัวหยิบพร้อมกัน)
+        # =========================================================
         dict(robot_id=1, start_pos=(1, 2), start_facing=Direction.EAST,
              script={0: Action.MOVE_FORWARD, 1: Action.PICKUP}),
         dict(robot_id=2, start_pos=(2, 1), start_facing=Direction.SOUTH,
              script={0: Action.MOVE_FORWARD, 1: Action.PICKUP}),
+
+        # =========================================================
+        # [Turn 4-5] Scenario 2: ILLEGAL (หยิบอากาศบนช่องที่ไม่มี Target)
+        # =========================================================
         dict(robot_id=3, start_pos=(6, 2), start_facing=Direction.EAST,
-             script={0: Action.MOVE_FORWARD, 1: Action.PICKUP}),
+             script={4: Action.MOVE_FORWARD, 5: Action.PICKUP}),
+
+        # =========================================================
+        # [Turn 8-9] Scenario 3: ILLEGAL (มีหุ่นแค่ 1 ตัว พยายามหยิบ Target)
+        # =========================================================
         dict(robot_id=4, start_pos=(1, 7), start_facing=Direction.EAST,
-             script={0: Action.MOVE_FORWARD, 1: Action.PICKUP}),
+             script={8: Action.MOVE_FORWARD, 9: Action.PICKUP}),
+
+        # =========================================================
+        # [Turn 12-13] Scenario 4: ILLEGAL (หุ่น 3 ตัวแย่งหยิบ Target พร้อมกัน)
+        # =========================================================
         dict(robot_id=5, start_pos=(6, 7), start_facing=Direction.EAST,
-             script={0: Action.MOVE_FORWARD, 1: Action.PICKUP}),
+             script={12: Action.MOVE_FORWARD, 13: Action.PICKUP}),
         dict(robot_id=6, start_pos=(7, 6), start_facing=Direction.SOUTH,
-             script={0: Action.MOVE_FORWARD, 1: Action.PICKUP}),
+             script={12: Action.MOVE_FORWARD, 13: Action.PICKUP}),
         dict(robot_id=7, start_pos=(8, 7), start_facing=Direction.WEST,
-             script={0: Action.MOVE_FORWARD, 1: Action.PICKUP}),
+             script={12: Action.MOVE_FORWARD, 13: Action.PICKUP}),
     ]
-    return Simulation(robots_config, world, max_turns=2)
+    
+    # เพิ่ม max_turns เป็น 16 เพื่อให้ครอบคลุมเวลาตั้งแต่ Turn 0 ถึง 15
+    return Simulation(robots_config, world, max_turns=16)
 
 
 # =====================================================================
