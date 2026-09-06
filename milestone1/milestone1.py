@@ -12,7 +12,7 @@ Install once:
     pip install pygame
 
 Run:
-    python cpr_milestone1_pygame.py
+    python milestone1.py
 
 Controls (also printed to the console on startup):
     SPACE        play / pause
@@ -27,12 +27,12 @@ import sys
 import time
 import queue
 import threading
+import random
 from dataclasses import dataclass
 from enum import Enum, auto
 import pygame
 
 GRID_SIZE = 10
-
 
 # =====================================================================
 #  Simulation core -- identical in spirit to cpr_milestone1.py.
@@ -128,6 +128,19 @@ class World:
         with self.lock:
             return set(self.targets), dict(self.robot_positions), dict(self.robot_facings)
 
+    def maybe_generate_random_targets(self, count=1):
+        with self.lock:
+            # ทำให้ฉากดู Busy ตลอดเวลา: ถ้ามี Target บนกระดานน้อยกว่า 5 ชิ้น ให้สุ่มเพิ่ม
+            while len(self.targets) < 5:
+                occupied = set(self.robot_positions.values())
+                # ล็อกพิกัดเหล่านี้ไว้ ห้าม Target แบบสุ่มมาเกิดทับพื้นที่จัดฉากของเรา
+                reserved = {(3, 3), (7, 2), (2, 7), (7, 7)}
+                for _attempt in range(50):
+                    pos = (random.randrange(self.size), random.randrange(self.size))
+                    if pos not in occupied and pos not in self.targets and pos not in reserved:
+                        self.targets.add(pos)
+                        break
+
 
 class Simulation:
     def __init__(self, robots_config, world: World, max_turns=2):
@@ -191,6 +204,9 @@ class Simulation:
             r.start()
 
         for turn in range(self.max_turns):
+            # ตรวจสอบและเพิ่ม Target แบบสุ่มในทุกๆ Turn
+            self.world.maybe_generate_random_targets()
+            
             self.perform_gate.clear()
 
             self.barrier_read.wait()
@@ -302,76 +318,9 @@ class Robot(threading.Thread):
             self.sim.barrier_send.wait()
 
 
-# def build_milestone1_scenario():
-#     world = World(GRID_SIZE)
-#     world.add_target((2, 2))
-#     world.add_target((2, 7))
-#     world.add_target((7, 7))
-#     # (7, 2) deliberately left empty -> triggers the "empty cell" case.
-
-#     robots_config = [
-#         dict(robot_id=1, start_pos=(1, 2), start_facing=Direction.EAST,
-#              script={0: Action.MOVE_FORWARD, 1: Action.PICKUP}),
-#         dict(robot_id=2, start_pos=(2, 1), start_facing=Direction.SOUTH,
-#              script={0: Action.MOVE_FORWARD, 1: Action.PICKUP}),
-#         dict(robot_id=3, start_pos=(6, 2), start_facing=Direction.EAST,
-#              script={0: Action.MOVE_FORWARD, 1: Action.PICKUP}),
-#         dict(robot_id=4, start_pos=(1, 7), start_facing=Direction.EAST,
-#              script={0: Action.MOVE_FORWARD, 1: Action.PICKUP}),
-#         dict(robot_id=5, start_pos=(6, 7), start_facing=Direction.EAST,
-#              script={0: Action.MOVE_FORWARD, 1: Action.PICKUP}),
-#         dict(robot_id=6, start_pos=(7, 6), start_facing=Direction.SOUTH,
-#              script={0: Action.MOVE_FORWARD, 1: Action.PICKUP}),
-#         dict(robot_id=7, start_pos=(8, 7), start_facing=Direction.WEST,
-#              script={0: Action.MOVE_FORWARD, 1: Action.PICKUP}),
-#     ]
-#     return Simulation(robots_config, world, max_turns=2)
-
-# def build_milestone1_scenario():
-#     world = World(GRID_SIZE)
-#     # วาง Target ไว้ 3 จุดสำหรับแต่ละเคส
-#     world.add_target((2, 2))  # สำหรับ Case 1 (Valid)
-#     # (7, 2) จงใจไม่วาง Target เพื่อเทส Case 2 (Empty Cell)
-#     world.add_target((2, 7))  # สำหรับ Case 3 (1 Robot)
-#     world.add_target((7, 7))  # สำหรับ Case 4 (3 Robots)
-
-#     # จัดตารางเวลา (Script) ให้หุ่นยนต์แต่ละกลุ่มทำงานคนละ Turn กัน
-#     # หากยังไม่ถึง Turn ของตัวเอง หุ่นยนต์จะทำสถานะ Action.IDLE (ยืนรอ) โดยอัตโนมัติ
-#     robots_config = [
-#         # =========================================================
-#         # [Turn 0-1] Scenario 1: VALID pickup (หุ่น 2 ตัวหยิบพร้อมกัน)
-#         # =========================================================
-#         dict(robot_id=1, start_pos=(1, 2), start_facing=Direction.EAST,
-#              script={0: Action.MOVE_FORWARD, 1: Action.PICKUP}),
-#         dict(robot_id=2, start_pos=(2, 1), start_facing=Direction.SOUTH,
-#              script={0: Action.MOVE_FORWARD, 1: Action.PICKUP}),
-
-#         # =========================================================
-#         # [Turn 4-5] Scenario 2: ILLEGAL (หยิบอากาศบนช่องที่ไม่มี Target)
-#         # =========================================================
-#         dict(robot_id=3, start_pos=(6, 2), start_facing=Direction.EAST,
-#              script={4: Action.MOVE_FORWARD, 5: Action.PICKUP}),
-
-#         # =========================================================
-#         # [Turn 8-9] Scenario 3: ILLEGAL (มีหุ่นแค่ 1 ตัว พยายามหยิบ Target)
-#         # =========================================================
-#         dict(robot_id=4, start_pos=(1, 7), start_facing=Direction.EAST,
-#              script={8: Action.MOVE_FORWARD, 9: Action.PICKUP}),
-
-#         # =========================================================
-#         # [Turn 12-13] Scenario 4: ILLEGAL (หุ่น 3 ตัวแย่งหยิบ Target พร้อมกัน)
-#         # =========================================================
-#         dict(robot_id=5, start_pos=(6, 7), start_facing=Direction.EAST,
-#              script={12: Action.MOVE_FORWARD, 13: Action.PICKUP}),
-#         dict(robot_id=6, start_pos=(7, 6), start_facing=Direction.SOUTH,
-#              script={12: Action.MOVE_FORWARD, 13: Action.PICKUP}),
-#         dict(robot_id=7, start_pos=(8, 7), start_facing=Direction.WEST,
-#              script={12: Action.MOVE_FORWARD, 13: Action.PICKUP}),
-#     ]
-    
-#     # เพิ่ม max_turns เป็น 16 เพื่อให้ครอบคลุมเวลาตั้งแต่ Turn 0 ถึง 15
-#     return Simulation(robots_config, world, max_turns=16)
-
+# =====================================================================
+#  Scenario Configuration
+# =====================================================================
 
 def parse_path(path_str):
     """
@@ -385,70 +334,62 @@ def parse_path(path_str):
         'P': Action.PICKUP,
         '-': Action.IDLE
     }
-    # แทนที่ช่องว่างทิ้งไป แล้วผูก index (turn) เข้ากับ Action
     return {turn: mapping[char] for turn, char in enumerate(path_str.replace(' ', ''))}
+
+def pace(times):
+    # เดิน 1 ช่อง เลี้ยวกลับหลัง หันกลับมาที่เดิม (ใช้เวลา 6 Turn ต่อ 1 รอบ)
+    return "F L L F L L " * times
 
 def build_milestone1_scenario():
     world = World(GRID_SIZE)
     
-    # 1. วาง Target หลักสำหรับทดสอบ (เหมือนเดิม)
-    world.add_target((3, 3))  # สำหรับ Case 1 (Valid)
-    # (7, 2) ว่างเปล่า สำหรับ Case 2 (Empty)
-    world.add_target((2, 7))  # สำหรับ Case 3 (1 Robot)
-    world.add_target((7, 7))  # สำหรับ Case 4 (3 Robots)
-    
-    # 2. วาง Target หลอก (Dummy Targets) เพื่อให้ฉากดูเต็มเหมือนใน IMG_7982_b3a0e8.jpg
-    world.add_target((1, 1))
-    world.add_target((8, 2))
-    world.add_target((5, 5))
-    world.add_target((8, 8))
+    # วาง Target ของคดีสำคัญ
+    world.add_target((3, 3))
+    world.add_target((2, 7))
+    world.add_target((7, 7))
+    # เรียกให้ระบบสุ่ม Target ตัวประกอบลงไปให้เต็มฉากครั้งแรก
+    world.maybe_generate_random_targets()
 
     robots_config = [
         # ====================================================================
-        # THE ACTORS: จะถูกสั่งให้ยืนนิ่งๆ (-) จนกว่าจะถึงคิวตัวเอง แล้วค่อยลงมือ
+        # THE ACTORS (1-7): เดินลาดตระเวนตลอดเวลา จนกว่าจะถึงคิวตัวเอง
         # ====================================================================
         
-        # [Turn 14] Case 1: VALID (2 ตัวหยิบพร้อมกันที่ 3,3)
+        # [Turn 15] Case 1: VALID (2 ตัวหยิบพร้อมกันที่ 3,3)
         dict(robot_id=1, start_pos=(1, 3), start_facing=Direction.EAST,
-             script=parse_path("-" * 10 + "F F R L P" + "-" * 30)),
+             script=parse_path(pace(2) + "F F P " + pace(5))),
         dict(robot_id=2, start_pos=(3, 1), start_facing=Direction.SOUTH,
-             script=parse_path("-" * 10 + "F F L R P" + "-" * 30)),
+             script=parse_path(pace(2) + "F F P " + pace(5))),
 
-        # [Turn 24] Case 2: ILLEGAL (หยิบอากาศที่ 7,2)
-        dict(robot_id=3, start_pos=(5, 2), start_facing=Direction.EAST,
-             script=parse_path("-" * 20 + "F F R L P" + "-" * 20)),
+        # [Turn 21] Case 2: ILLEGAL (หยิบอากาศที่ 7,2)
+        dict(robot_id=3, start_pos=(7, 4), start_facing=Direction.NORTH,
+             script=parse_path(pace(3) + "F F P " + pace(5))),
 
-        # [Turn 34] Case 3: ILLEGAL (มาตัวเดียวที่ 2,7)
-        dict(robot_id=4, start_pos=(2, 5), start_facing=Direction.SOUTH,
-             script=parse_path("-" * 30 + "F F R L P" + "-" * 10)),
+        # [Turn 27] Case 3: ILLEGAL (มาตัวเดียวที่ 2,7)
+        dict(robot_id=4, start_pos=(2, 9), start_facing=Direction.NORTH,
+             script=parse_path(pace(4) + "F F P " + pace(5))),
 
-        # [Turn 44] Case 4: ILLEGAL (มา 3 ตัวแย่งกันที่ 7,7)
+        # [Turn 33] Case 4: ILLEGAL (มา 3 ตัวแย่งกันที่ 7,7)
         dict(robot_id=5, start_pos=(5, 7), start_facing=Direction.EAST,
-             script=parse_path("-" * 40 + "F F R L P")),
-        dict(robot_id=6, start_pos=(7, 5), start_facing=Direction.SOUTH,
-             script=parse_path("-" * 40 + "F F R L P")),
+             script=parse_path(pace(5) + "F F P " + pace(5))),
+        dict(robot_id=6, start_pos=(7, 9), start_facing=Direction.NORTH,
+             script=parse_path(pace(5) + "F F P " + pace(5))),
         dict(robot_id=7, start_pos=(9, 7), start_facing=Direction.WEST,
-             script=parse_path("-" * 40 + "F F R L P")),
+             script=parse_path(pace(5) + "F F P " + pace(5))),
 
         # ====================================================================
-        # THE EXTRAS (PACMAN GHOSTS): เดินป่วนทั่วฉากตลอดเวลา โชว์ Parallel Behavior
+        # THE EXTRAS (8-10): ตัวประกอบเดินอิสระ (Ghosts)
         # ====================================================================
-        
-        # Ghost 1: เดินเลาะขอบกำแพงเป็นวงกลมใหญ่ตลอดเวลา
         dict(robot_id=8, start_pos=(0, 0), start_facing=Direction.EAST,
-             script=parse_path(("F" * 9 + "R") * 10)),
-             
-        # Ghost 2: เดินเป็นสี่เหลี่ยมเล็กๆ ตรงกลางฉาก (ผ่าน Target หลอก แต่ไม่เก็บ)
+             script=parse_path(("F" * 9 + "R") * 15)),
         dict(robot_id=9, start_pos=(4, 4), start_facing=Direction.NORTH,
-             script=parse_path(("F L F L F L F L") * 10)),
-             
-        # Ghost 3: เดินซิกแซกไปมา
-        dict(robot_id=10, start_pos=(9, 9), start_facing=Direction.WEST,
-             script=parse_path(("F F R F F L") * 10)),
+             script=parse_path(("F F L F F L F F L F F L") * 10)),
+        dict(robot_id=10, start_pos=(9, 0), start_facing=Direction.SOUTH,
+             script=parse_path(("F F R F F L") * 15)),
     ]
     
-    # เซ็ต max_turns เป็น 50 เพื่อให้มีเวลาดู Extras เดินป่วนหลังโชว์จบ
     return Simulation(robots_config, world, max_turns=50)
+
 
 # =====================================================================
 #  Pygame renderer
@@ -473,8 +414,8 @@ COLOR_PANEL = (22, 25, 34)
 
 ROBOT_COLORS = {
     1: (90, 169, 230), 2: (239, 100, 97), 3: (242, 193, 78), 4: (177, 140, 255),
-    5: (107, 207, 127), 6: (255, 143, 171), 7: (127, 209, 214), 8: (150, 150, 150),  
-    9: (120, 120, 120), 10: (180, 180, 180)
+    5: (107, 207, 127), 6: (255, 143, 171), 7: (127, 209, 214), 
+    8: (150, 150, 150), 9: (120, 120, 120), 10: (180, 180, 180) # Ghost Colors
 }
 
 FLASH_DURATION = 0.9  # seconds
@@ -632,6 +573,11 @@ class PygameRenderer:
                 pts.append((cx + rx, cy + ry))
             pygame.draw.polygon(self.screen, ROBOT_COLORS[rid], pts)
             pygame.draw.polygon(self.screen, COLOR_BG, pts, width=1)
+            
+            # --- ไฮไลต์นักแสดงหลักให้อาจารย์มองเห็นง่ายๆ ---
+            if rid <= 7:
+                pygame.draw.circle(self.screen, (255, 255, 255), (cx, cy), 20, 2)
+                
             label = self.font_small.render(str(rid), True, ROBOT_COLORS[rid])
             self.screen.blit(label, (cx - label.get_width() // 2, cy + 16))
 
