@@ -215,8 +215,8 @@ class Simulation:
 
             self.barrier_read.wait()
             if renderer:
-                details = [f"R{r.id}: Inbox has {len(r.messages_this_turn)} msgs" for r in self.robots if r.messages_this_turn][:6]
-                if not details: details = ["All inboxes are empty"]
+                # โชว์ครบทุกตัว ไม่ตัดทิ้งแล้ว
+                details = [f"R{r.id}: {len(r.messages_this_turn)} msgs rx'd" for r in self.robots]
                 renderer.checkpoint("1 - Read Messages", turn, details=details)
 
             # ==============================
@@ -227,10 +227,10 @@ class Simulation:
             if renderer:
                 details = []
                 for r in self.robots:
-                    if r._sensed.get("target_ahead"): details.append(f"R{r.id}: Sees Target!")
-                    elif r._sensed.get("wall_ahead"): details.append(f"R{r.id}: Sees Wall!")
-                if not details: details = ["Scanning area... Clear."]
-                renderer.checkpoint("2 - Sense Environment", turn, details=details[:6])
+                    if r._sensed.get("target_ahead"): details.append(f"R{r.id}: Sees Target")
+                    elif r._sensed.get("wall_ahead"): details.append(f"R{r.id}: Sees Wall")
+                    else: details.append(f"R{r.id}: Clear")
+                renderer.checkpoint("2 - Sense Environment", turn, details=details)
 
             # ==============================
             # PHASE 3: DECIDE
@@ -238,8 +238,8 @@ class Simulation:
 
             self.barrier_decide.wait()
             if renderer:
-                acts = [f"R{r.id} planned {r._decided_action.name}" for r in self.robots if r._decided_action != Action.IDLE]
-                renderer.checkpoint("3 - Decide Action", turn, details=acts[:6] or ["All robots are IDLE"])
+                acts = [f"R{r.id} plans {r._decided_action.name}" for r in self.robots]
+                renderer.checkpoint("3 - Decide Action", turn, details=acts)
 
             # --- referee runs here: single-threaded, before ANY robot acts ---
             # ==============================
@@ -249,21 +249,21 @@ class Simulation:
             self.referee_check(turn)
             self.perform_gate.set()
             if renderer:
-                renderer.checkpoint("4 - Referee Check", turn, ingest_results=True, details=["Validating all proposed actions..."])
+                renderer.checkpoint("4 - Referee Check", turn, ingest_results=True, details=["Validating intentions..."])
 
             # ==============================
             # PHASE 5: PERFORM
             # ==============================
             self.barrier_perform.wait()
             if renderer:
-                renderer.checkpoint("5 - Perform Action", turn, details=["Actions executed on grid."])
+                renderer.checkpoint("5 - Perform Action", turn, details=["Executing valid actions..."])
 
             # ==============================
             # PHASE 6: SEND
             # ==============================
             self.barrier_send.wait()
             if renderer:
-                details = [f"R{r.id} broadcasting state..." for r in self.robots][:6]
+                details = [f"R{r.id} broadcasted intent" for r in self.robots]
                 renderer.checkpoint("6 - Send Messages", turn, details=details)
 
         for r in self.robots:
@@ -340,7 +340,7 @@ class Robot(threading.Thread):
         self.sim.world.set_robot_state(self.id, self.position, self.facing)
 
     def send_messages(self):
-        payload = f"pos={self.position},facing={self.facing.name}"
+        payload = f"pos={self.position}, face={self.facing.name}, plan={self._decided_action.name}"
         for other in self.sim.robots:
             if other.id != self.id:
                 other.inbox.put(Message(self.id, payload, self.turn))
@@ -420,7 +420,7 @@ def build_milestone1_scenario():
 CELL = 50
 MARGIN = 30
 GRID_PX = GRID_SIZE * CELL
-SIDEBAR_W = 380
+SIDEBAR_W = 420
 WIN_W = MARGIN * 2 + GRID_PX + SIDEBAR_W
 WIN_H = MARGIN * 2 + GRID_PX
 
@@ -457,7 +457,7 @@ class PygameRenderer:
         self.robots = robots
 
         self.paused = True
-        self.speed = 1.0          # turns per second
+        self.speed = 0.25          # turns per second
         self.phase_label = "ready - press SPACE to start"
         self.turn = 0
         self.flashes = []          # list of (cell, color, start_time)
@@ -483,9 +483,9 @@ class PygameRenderer:
                 elif event.key == pygame.K_RIGHT:
                     self._advance_requested = True
                 elif event.key == pygame.K_UP:
-                    self.speed = min(4.0, self.speed + 0.25)
+                    self.speed = min(4.0, self.speed + 0.1)
                 elif event.key == pygame.K_DOWN:
-                    self.speed = max(0.25, self.speed - 0.25)
+                    self.speed = max(0.1, self.speed - 0.1)
                 elif event.key == pygame.K_r:
                     self._restart_requested = True
 
@@ -618,33 +618,48 @@ class PygameRenderer:
             y += dy
 
         max_t = getattr(self.sim, "max_turns", "?") if hasattr(self, "sim") else "?"
-        line(f"turn {self.turn} / {max_t}", COLOR_TEXT_DIM, self.font_mono, 4)
+        line(f"turn {self.turn} / {max_t}", COLOR_TEXT_DIM, self.font_mono, 26)
         line(self.phase_label, COLOR_TEXT, self.font_mono, 26)
 
         line(f"speed: {self.speed:.2f} turns/s   ({'paused' if self.paused else 'playing'})",
-             COLOR_TEXT_DIM, self.font_mono, 26)
+            COLOR_TEXT_DIM, self.font_mono, 26)
 
         line(f"valid: {self.valid_count}    illegal: {self.illegal_count}", COLOR_TEXT, self.font, 26)
-        
-        # --- UI อัปเดตใหม่: แสดงรายละเอียดของแต่ละ Phase ---
-        line("Current Phase Log:", COLOR_TEXT_DIM, self.font_small, 20)
-        for d in getattr(self, "phase_details", []):
-            line("  " + d, (170, 180, 200), self.font_small, 16)
 
-        # ขยับ Log เก่าลงมาด้านล่าง
-        y = panel.bottom - 110 
-        line("Referee Log:", COLOR_TEXT_DIM, self.font_small, 20)
+        # -----------------------------------------------------
+        # โซน Phase Details (แบ่งเป็น 2 คอลัมน์ จะได้ไม่ล้นจอแนวตั้ง)
+        # -----------------------------------------------------
+        line("Current Phase Log:", COLOR_TEXT_DIM, self.font_small, 20)
+        
+        details = getattr(self, "phase_details", [])
+        start_y_details = y # จำค่า Y ปัจจุบันไว้สำหรับคอลัมน์ที่ 2
+        
+        for index, d in enumerate(details):
+            if index < 5: # 5 ตัวแรกอยู่คอลัมน์ซ้าย
+                line("  " + d, (170, 180, 200), self.font_small, 18)
+            else: # 5 ตัวหลังปัดไปคอลัมน์ขวา
+                surf = self.font_small.render("  " + d, True, (170, 180, 200))
+                # ขยับแกน x ไปทางขวา 180 pixel, แกน y คำนวณจากตอนเริ่ม
+                self.screen.blit(surf, (x0 + 180, start_y_details + ((index - 5) * 18)))
+        
+        # ปรับ Y ข้ามโซนคอลัมน์เพื่อไม่ให้ทับกัน
+        if len(details) > 0:
+            y = start_y_details + (min(len(details), 5) * 18) + 10
+
+        # -----------------------------------------------------
+        # โซน Referee Log (ดึงลงมาให้มีระยะห่างที่ปลอดภัย)
+        # -----------------------------------------------------
+        # เลื่อนลงมาด้านล่างสุด แต่ไม่ให้ทับปุ่มบังคับ
+        y = max(y + 10, panel.bottom - 130) 
+        line("Referee Log:", COLOR_TEXT_DIM, self.font_small, 18)
         for text, color in self.log_lines[-4:]:
             surf = self.font_small.render(text, True, color)
             self.screen.blit(surf, (x0, y))
-            y += 18
+            y += 16
 
-        y = panel.bottom - 90
-        for text in ["SPACE  play / pause", "-> step forward (while paused)",
-                     "UP/DOWN  speed", "R  restart   ESC/Q  quit"]:
-            surf = self.font_small.render(text, True, COLOR_TEXT_DIM)
-            self.screen.blit(surf, (x0, y))
-            y += 18
+        # โซนคำอธิบายปุ่ม (ล่างสุด)
+        y = panel.bottom - 45
+        line("SPACE: play/pause | ->: step | UP/DOWN: speed | R: restart", COLOR_TEXT_DIM, self.font_small, 0)
 
 
 def main():
