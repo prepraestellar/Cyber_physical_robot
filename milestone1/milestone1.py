@@ -134,7 +134,7 @@ class World:
                 return 
             occupied = set(self.robot_positions.values())
             # ล็อกพิกัดจัดฉากไว้ ไม่ให้สุ่มเกิดทับ
-            reserved = {(3, 3), (7, 2), (2, 7), (7, 7)}
+            reserved = {(3, 3), (7, 2), (2, 7), (7, 7), (5, 3), (5, 8)}
             for _ in range(count):
                 for _attempt in range(50):
                     pos = (random.randrange(self.size), random.randrange(self.size))
@@ -402,13 +402,23 @@ def pace(times):
     # เดิน 1 ช่อง เลี้ยวกลับหลัง หันกลับมาที่เดิม (ใช้เวลา 6 Turn ต่อ 1 รอบ)
     return "F L L F L L " * times
 
+
+def hold(turns):
+    # รอเฉยๆ แบบไม่ขยับตำแหน่งเลย (หมุนขวาครบ 4 ครั้ง = หันหน้ากลับทิศเดิมเป๊ะ)
+    # turns ต้องเป็นจำนวนเท่าของ 4 เท่านั้น เพื่อให้ facing กลับมาตรงเป๊ะก่อนเดินจริง
+    assert turns % 4 == 0
+    return "R" * turns
+
 def build_milestone1_scenario():
     world = World(GRID_SIZE)
     
     # วาง Target ของคดีสำคัญ
-    world.add_target((3, 3))
-    world.add_target((2, 7))
-    world.add_target((7, 7))
+    world.add_target((3, 3))   # valid A
+    world.add_target((2, 7))   # illegal (single) -> ตามด้วยทีมเก็บกวาด (valid)
+    world.add_target((7, 7))   # illegal (too many) -> ตามด้วยทีมเก็บกวาด (valid)
+    world.add_target((5, 3))   # valid B (ใหม่)
+    world.add_target((5, 8))   # valid C (ใหม่)
+    
     # เรียกให้ระบบสุ่ม Target ตัวประกอบลงไปให้เต็มฉากครั้งแรก
     world.maybe_generate_random_targets()
 
@@ -426,8 +436,28 @@ def build_milestone1_scenario():
         dict(robot_id=8, start_pos=(0, 0), start_facing=Direction.EAST, script=parse_path(("F" * 20))), # สั่งเดินเกินจอ มันจะเลี้ยวหลบเอง!
         dict(robot_id=9, start_pos=(4, 4), start_facing=Direction.NORTH, script=parse_path(("F F L F F L F F L F F L") * 10)),
         dict(robot_id=10, start_pos=(9, 0), start_facing=Direction.SOUTH, script=parse_path(("F" * 20))),
+
+        # --- CLEANUP CREW: เก็บ (2,7) ให้ถูกวิธีหลัง illegal attempt ของ robot4 (turn 26) ---
+        # ทั้งคู่เดิน 2 ช่องพอดี รอ (hold) 36 turn ก่อน แล้วเดิน 2 แล้วหยิบ -> pickup ที่ turn 38
+        dict(robot_id=11, start_pos=(0, 7), start_facing=Direction.EAST, script=parse_path(hold(36) + "F F P")),
+        dict(robot_id=12, start_pos=(2, 5), start_facing=Direction.SOUTH, script=parse_path(hold(36) + "F F P")),
+
+        # --- CLEANUP CREW: เก็บ (7,7) ให้ถูกวิธีหลัง illegal attempt ของ robot5,6,7 (turn 32) ---
+        # ทั้งคู่เดิน 3 ช่องพอดี รอ 40 turn ก่อน แล้วเดิน 3 แล้วหยิบ -> pickup ที่ turn 43
+        dict(robot_id=13, start_pos=(4, 7), start_facing=Direction.EAST, script=parse_path(hold(40) + "F F F P")),
+        dict(robot_id=14, start_pos=(7, 4), start_facing=Direction.SOUTH, script=parse_path(hold(40) + "F F F P")),
+
+        # --- VALID B (ใหม่) ที่ (5,3): รอ 44 turn แล้วเดิน 2 แล้วหยิบ -> pickup ที่ turn 46 ---
+        dict(robot_id=15, start_pos=(5, 1), start_facing=Direction.SOUTH, script=parse_path(hold(44) + "F F P")),
+        dict(robot_id=16, start_pos=(7, 3), start_facing=Direction.WEST, script=parse_path(hold(44) + "F F P")),
+
+        # --- VALID C (ใหม่) ที่ (5,8): รอ 48 turn แล้วเดิน 3 แล้วหยิบ -> pickup ที่ turn 51 ---
+        dict(robot_id=17, start_pos=(5, 5), start_facing=Direction.SOUTH, script=parse_path(hold(48) + "F F F P")),
+        dict(robot_id=18, start_pos=(2, 8), start_facing=Direction.EAST, script=parse_path(hold(48) + "F F F P")),
     ]
-    return Simulation(robots_config, world, max_turns=50)
+           
+    
+    return Simulation(robots_config, world, max_turns=70)
 
 
 # =====================================================================
@@ -439,7 +469,7 @@ MARGIN = 30
 GRID_PX = GRID_SIZE * CELL
 SIDEBAR_W = 560
 WIN_W = MARGIN * 2 + GRID_PX + SIDEBAR_W
-WIN_H = MARGIN * 2 + GRID_PX + 140
+WIN_H = MARGIN * 2 + GRID_PX + 90
 
 COLOR_BG = (14, 16, 21)
 COLOR_GRID_BG = (18, 21, 29)
@@ -454,7 +484,9 @@ COLOR_PANEL = (22, 25, 34)
 ROBOT_COLORS = {
     1: (90, 169, 230), 2: (239, 100, 97), 3: (242, 193, 78), 4: (177, 140, 255),
     5: (107, 207, 127), 6: (255, 143, 171), 7: (127, 209, 214), 
-    8: (150, 150, 150), 9: (120, 120, 120), 10: (180, 180, 180) # Ghost Colors
+    8: (150, 150, 150), 9: (120, 120, 120), 10: (180, 180, 180), # Ghost Colors
+    11: (255, 200, 87), 12: (99, 179, 237), 13: (246, 135, 179), 14: (129, 199, 132),
+    15: (186, 104, 200), 16: (77, 208, 225), 17: (255, 138, 101), 18: (174, 213, 129),
 }
 
 FLASH_DURATION = 0.9  # seconds
@@ -623,7 +655,8 @@ class PygameRenderer:
             self.screen.blit(label, (cx - label.get_width() // 2, cy + 16))
 
     def _draw_sidebar(self):
-        panel = pygame.Rect(MARGIN * 2 + GRID_PX, MARGIN, SIDEBAR_W - MARGIN, GRID_PX)
+        panel_h = WIN_H - (MARGIN * 2)
+        panel = pygame.Rect(MARGIN * 2 + GRID_PX, MARGIN, SIDEBAR_W - MARGIN, panel_h)
         pygame.draw.rect(self.screen, COLOR_PANEL, panel, border_radius=8)
         x0 = panel.x + 16
         y = panel.y + 16
@@ -652,30 +685,39 @@ class PygameRenderer:
         start_y_details = y # จำค่า Y ปัจจุบันไว้สำหรับคอลัมน์ที่ 2
         
         for index, d in enumerate(details):
-            if index < 5: # 5 ตัวแรกอยู่คอลัมน์ซ้าย
-                line("  " + d, (170, 180, 200), self.font_small, 18)
-            else: # 5 ตัวหลังปัดไปคอลัมน์ขวา
-                surf = self.font_small.render("  " + d, True, (170, 180, 200))
+            text_color = (170, 180, 200) # สีสำรองกรณีไม่ใช่ข้อความของหุ่นยนต์
+            if d.startswith("R"):
+                try:
+                    parts = d.split()[0].replace("R", "").replace(":", "")
+                    rid = int(parts)
+                    if rid in ROBOT_COLORS:
+                        text_color = ROBOT_COLORS[rid]
+                except:
+                    pass
+            if index < 9: # 9 ตัวแรกอยู่คอลัมน์ซ้าย
+                line("  " + d, text_color, self.font_small, 18)
+            else: # 9 ตัวหลังปัดไปคอลัมน์ขวา
+                surf = self.font_small.render("  " + d, True, text_color)
                 # ขยับแกน x ไปทางขวา 260 pixel, แกน y คำนวณจากตอนเริ่ม
-                self.screen.blit(surf, (x0 + 260, start_y_details + ((index - 5) * 18)))
+                self.screen.blit(surf, (x0 + 260, start_y_details + ((index - 9) * 18)))
         
         # ปรับ Y ข้ามโซนคอลัมน์เพื่อไม่ให้ทับกัน
         if len(details) > 0:
-            y = start_y_details + (min(len(details), 5) * 18) + 10
+            y = start_y_details + (min(len(details), 9) * 18) + 15
 
         # -----------------------------------------------------
         # โซน Referee Log (ดึงลงมาให้มีระยะห่างที่ปลอดภัย)
         # -----------------------------------------------------
         # เลื่อนลงมาด้านล่างสุด แต่ไม่ให้ทับปุ่มบังคับ
-        y = max(y + 10, panel.bottom - 130) 
+        y = max(y + 10, panel.bottom - 240) 
         line("Referee Log:", COLOR_TEXT_DIM, self.font_small, 18)
-        for text, color in self.log_lines[-4:]:
+        for text, color in self.log_lines[-11:]:
             surf = self.font_small.render(text, True, color)
             self.screen.blit(surf, (x0, y))
-            y += 16
+            y += 18
 
         # โซนคำอธิบายปุ่ม (ล่างสุด)
-        y = panel.bottom - 45
+        y = panel.bottom - 35
         line("SPACE: play/pause | ->: step | UP/DOWN: speed | R: restart", COLOR_TEXT_DIM, self.font_small, 0)
 
 
