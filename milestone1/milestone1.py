@@ -62,7 +62,6 @@ class Direction(Enum):
 
 
 class Action(Enum):
-    IDLE = auto()
     MOVE_FORWARD = auto()
     TURN_LEFT = auto()
     TURN_RIGHT = auto()
@@ -227,9 +226,17 @@ class Simulation:
             if renderer:
                 details = []
                 for r in self.robots:
-                    if r._sensed.get("target_ahead"): details.append(f"R{r.id}: Sees Target")
-                    elif r._sensed.get("wall_ahead"): details.append(f"R{r.id}: Sees Wall")
-                    else: details.append(f"R{r.id}: Clear")
+                    msg = f"R{r.id}: "
+                    sees = []
+                    # เช็คว่าเห็นอะไรบ้าง แล้วเอาคำมารวมกัน
+                    if r._sensed.get("target_here"): sees.append("See Target Here")
+                    if r._sensed.get("target_ahead"): sees.append("See Target Ahead")
+                    if r._sensed.get("wall_ahead"): sees.append("See Wall")
+                    
+                    if sees:
+                        details.append(msg + " & ".join(sees))
+                    else:
+                        details.append(msg + "Clear")
                 renderer.checkpoint("2 - Sense Environment", turn, details=details)
 
             # ==============================
@@ -265,7 +272,7 @@ class Simulation:
             # ==============================
             self.barrier_send.wait()
             if renderer:
-                details = [f"R{r.id} broadcasted intent" for r in self.robots]
+                details = [f"R{r.id} TX: {r._decided_action.name} @ {r.position}" for r in self.robots]
                 renderer.checkpoint("6 - Send Messages", turn, details=details)
 
         for r in self.robots:
@@ -294,7 +301,7 @@ class Robot(threading.Thread):
         self.inbox = queue.Queue()
         self.messages_this_turn = []
         self.turn = 0
-        self._decided_action = Action.IDLE
+        self._decided_action = Action.TURN_RIGHT
         self._sensed = {}
 
     def read_messages(self):
@@ -308,13 +315,14 @@ class Robot(threading.Thread):
         front = (self.position[0] + dx, self.position[1] + dy)
         self._sensed = {
             "target_ahead": self.sim.world.has_target(front) if self.sim.world.in_bounds(front) else False,
+            "target_here": self.sim.world.has_target(self.position),
             "robots_ahead": [rid for rid in self.sim.world.robots_at(front) if rid != self.id],
             "robots_here": [rid for rid in self.sim.world.robots_at(self.position) if rid != self.id],
             "wall_ahead": not self.sim.world.in_bounds(front) # ตรวจจับกำแพง!
         }
 
     def decide(self):
-        action = self.script.get(self.turn, Action.IDLE)
+        action = self.script.get(self.turn, Action.TURN_RIGHT)
                 
         # --- DYNAMIC COLLISION AVOIDANCE ---
         # ถ่ายทอดความฉลาด: ถ้าในสคริปต์สั่งให้เดินหน้า แต่ตา (sensed) เห็นกำแพง
@@ -375,11 +383,11 @@ class Robot(threading.Thread):
 def parse_path(path_str):
     """
     ตัวแปลง String ให้กลายเป็น Script Dictionary
-    F = เดินหน้า, L = เลี้ยวซ้าย, R = เลี้ยวขวา, P = หยิบเป้าหมาย, - = ยืนนิ่งรอคิว (IDLE)
+    F = เดินหน้า, L = เลี้ยวซ้าย, R = เลี้ยวขวา, P = หยิบเป้าหมาย, - = หมุนตัวรอคิว
     """
     mapping = {
             'F': Action.MOVE_FORWARD, 'L': Action.TURN_LEFT, 
-            'R': Action.TURN_RIGHT, 'P': Action.PICKUP, '-': Action.IDLE
+            'R': Action.TURN_RIGHT, 'P': Action.PICKUP, '-': Action.TURN_RIGHT
     }
     return {turn: mapping[char] for turn, char in enumerate(path_str.replace(' ', ''))}
 
