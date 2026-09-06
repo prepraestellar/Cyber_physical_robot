@@ -327,51 +327,128 @@ class Robot(threading.Thread):
 #     ]
 #     return Simulation(robots_config, world, max_turns=2)
 
+# def build_milestone1_scenario():
+#     world = World(GRID_SIZE)
+#     # วาง Target ไว้ 3 จุดสำหรับแต่ละเคส
+#     world.add_target((2, 2))  # สำหรับ Case 1 (Valid)
+#     # (7, 2) จงใจไม่วาง Target เพื่อเทส Case 2 (Empty Cell)
+#     world.add_target((2, 7))  # สำหรับ Case 3 (1 Robot)
+#     world.add_target((7, 7))  # สำหรับ Case 4 (3 Robots)
+
+#     # จัดตารางเวลา (Script) ให้หุ่นยนต์แต่ละกลุ่มทำงานคนละ Turn กัน
+#     # หากยังไม่ถึง Turn ของตัวเอง หุ่นยนต์จะทำสถานะ Action.IDLE (ยืนรอ) โดยอัตโนมัติ
+#     robots_config = [
+#         # =========================================================
+#         # [Turn 0-1] Scenario 1: VALID pickup (หุ่น 2 ตัวหยิบพร้อมกัน)
+#         # =========================================================
+#         dict(robot_id=1, start_pos=(1, 2), start_facing=Direction.EAST,
+#              script={0: Action.MOVE_FORWARD, 1: Action.PICKUP}),
+#         dict(robot_id=2, start_pos=(2, 1), start_facing=Direction.SOUTH,
+#              script={0: Action.MOVE_FORWARD, 1: Action.PICKUP}),
+
+#         # =========================================================
+#         # [Turn 4-5] Scenario 2: ILLEGAL (หยิบอากาศบนช่องที่ไม่มี Target)
+#         # =========================================================
+#         dict(robot_id=3, start_pos=(6, 2), start_facing=Direction.EAST,
+#              script={4: Action.MOVE_FORWARD, 5: Action.PICKUP}),
+
+#         # =========================================================
+#         # [Turn 8-9] Scenario 3: ILLEGAL (มีหุ่นแค่ 1 ตัว พยายามหยิบ Target)
+#         # =========================================================
+#         dict(robot_id=4, start_pos=(1, 7), start_facing=Direction.EAST,
+#              script={8: Action.MOVE_FORWARD, 9: Action.PICKUP}),
+
+#         # =========================================================
+#         # [Turn 12-13] Scenario 4: ILLEGAL (หุ่น 3 ตัวแย่งหยิบ Target พร้อมกัน)
+#         # =========================================================
+#         dict(robot_id=5, start_pos=(6, 7), start_facing=Direction.EAST,
+#              script={12: Action.MOVE_FORWARD, 13: Action.PICKUP}),
+#         dict(robot_id=6, start_pos=(7, 6), start_facing=Direction.SOUTH,
+#              script={12: Action.MOVE_FORWARD, 13: Action.PICKUP}),
+#         dict(robot_id=7, start_pos=(8, 7), start_facing=Direction.WEST,
+#              script={12: Action.MOVE_FORWARD, 13: Action.PICKUP}),
+#     ]
+    
+#     # เพิ่ม max_turns เป็น 16 เพื่อให้ครอบคลุมเวลาตั้งแต่ Turn 0 ถึง 15
+#     return Simulation(robots_config, world, max_turns=16)
+
+
+def parse_path(path_str):
+    """
+    ตัวแปลง String ให้กลายเป็น Script Dictionary
+    F = เดินหน้า, L = เลี้ยวซ้าย, R = เลี้ยวขวา, P = หยิบเป้าหมาย, - = ยืนนิ่งรอคิว (IDLE)
+    """
+    mapping = {
+        'F': Action.MOVE_FORWARD,
+        'L': Action.TURN_LEFT,
+        'R': Action.TURN_RIGHT,
+        'P': Action.PICKUP,
+        '-': Action.IDLE
+    }
+    # แทนที่ช่องว่างทิ้งไป แล้วผูก index (turn) เข้ากับ Action
+    return {turn: mapping[char] for turn, char in enumerate(path_str.replace(' ', ''))}
+
 def build_milestone1_scenario():
     world = World(GRID_SIZE)
-    # วาง Target ไว้ 3 จุดสำหรับแต่ละเคส
-    world.add_target((2, 2))  # สำหรับ Case 1 (Valid)
-    # (7, 2) จงใจไม่วาง Target เพื่อเทส Case 2 (Empty Cell)
+    
+    # 1. วาง Target หลักสำหรับทดสอบ (เหมือนเดิม)
+    world.add_target((3, 3))  # สำหรับ Case 1 (Valid)
+    # (7, 2) ว่างเปล่า สำหรับ Case 2 (Empty)
     world.add_target((2, 7))  # สำหรับ Case 3 (1 Robot)
     world.add_target((7, 7))  # สำหรับ Case 4 (3 Robots)
+    
+    # 2. วาง Target หลอก (Dummy Targets) เพื่อให้ฉากดูเต็มเหมือนใน IMG_7982_b3a0e8.jpg
+    world.add_target((1, 1))
+    world.add_target((8, 2))
+    world.add_target((5, 5))
+    world.add_target((8, 8))
 
-    # จัดตารางเวลา (Script) ให้หุ่นยนต์แต่ละกลุ่มทำงานคนละ Turn กัน
-    # หากยังไม่ถึง Turn ของตัวเอง หุ่นยนต์จะทำสถานะ Action.IDLE (ยืนรอ) โดยอัตโนมัติ
     robots_config = [
-        # =========================================================
-        # [Turn 0-1] Scenario 1: VALID pickup (หุ่น 2 ตัวหยิบพร้อมกัน)
-        # =========================================================
-        dict(robot_id=1, start_pos=(1, 2), start_facing=Direction.EAST,
-             script={0: Action.MOVE_FORWARD, 1: Action.PICKUP}),
-        dict(robot_id=2, start_pos=(2, 1), start_facing=Direction.SOUTH,
-             script={0: Action.MOVE_FORWARD, 1: Action.PICKUP}),
+        # ====================================================================
+        # THE ACTORS: จะถูกสั่งให้ยืนนิ่งๆ (-) จนกว่าจะถึงคิวตัวเอง แล้วค่อยลงมือ
+        # ====================================================================
+        
+        # [Turn 14] Case 1: VALID (2 ตัวหยิบพร้อมกันที่ 3,3)
+        dict(robot_id=1, start_pos=(1, 3), start_facing=Direction.EAST,
+             script=parse_path("-" * 10 + "F F R L P" + "-" * 30)),
+        dict(robot_id=2, start_pos=(3, 1), start_facing=Direction.SOUTH,
+             script=parse_path("-" * 10 + "F F L R P" + "-" * 30)),
 
-        # =========================================================
-        # [Turn 4-5] Scenario 2: ILLEGAL (หยิบอากาศบนช่องที่ไม่มี Target)
-        # =========================================================
-        dict(robot_id=3, start_pos=(6, 2), start_facing=Direction.EAST,
-             script={4: Action.MOVE_FORWARD, 5: Action.PICKUP}),
+        # [Turn 24] Case 2: ILLEGAL (หยิบอากาศที่ 7,2)
+        dict(robot_id=3, start_pos=(5, 2), start_facing=Direction.EAST,
+             script=parse_path("-" * 20 + "F F R L P" + "-" * 20)),
 
-        # =========================================================
-        # [Turn 8-9] Scenario 3: ILLEGAL (มีหุ่นแค่ 1 ตัว พยายามหยิบ Target)
-        # =========================================================
-        dict(robot_id=4, start_pos=(1, 7), start_facing=Direction.EAST,
-             script={8: Action.MOVE_FORWARD, 9: Action.PICKUP}),
+        # [Turn 34] Case 3: ILLEGAL (มาตัวเดียวที่ 2,7)
+        dict(robot_id=4, start_pos=(2, 5), start_facing=Direction.SOUTH,
+             script=parse_path("-" * 30 + "F F R L P" + "-" * 10)),
 
-        # =========================================================
-        # [Turn 12-13] Scenario 4: ILLEGAL (หุ่น 3 ตัวแย่งหยิบ Target พร้อมกัน)
-        # =========================================================
-        dict(robot_id=5, start_pos=(6, 7), start_facing=Direction.EAST,
-             script={12: Action.MOVE_FORWARD, 13: Action.PICKUP}),
-        dict(robot_id=6, start_pos=(7, 6), start_facing=Direction.SOUTH,
-             script={12: Action.MOVE_FORWARD, 13: Action.PICKUP}),
-        dict(robot_id=7, start_pos=(8, 7), start_facing=Direction.WEST,
-             script={12: Action.MOVE_FORWARD, 13: Action.PICKUP}),
+        # [Turn 44] Case 4: ILLEGAL (มา 3 ตัวแย่งกันที่ 7,7)
+        dict(robot_id=5, start_pos=(5, 7), start_facing=Direction.EAST,
+             script=parse_path("-" * 40 + "F F R L P")),
+        dict(robot_id=6, start_pos=(7, 5), start_facing=Direction.SOUTH,
+             script=parse_path("-" * 40 + "F F R L P")),
+        dict(robot_id=7, start_pos=(9, 7), start_facing=Direction.WEST,
+             script=parse_path("-" * 40 + "F F R L P")),
+
+        # ====================================================================
+        # THE EXTRAS (PACMAN GHOSTS): เดินป่วนทั่วฉากตลอดเวลา โชว์ Parallel Behavior
+        # ====================================================================
+        
+        # Ghost 1: เดินเลาะขอบกำแพงเป็นวงกลมใหญ่ตลอดเวลา
+        dict(robot_id=8, start_pos=(0, 0), start_facing=Direction.EAST,
+             script=parse_path(("F" * 9 + "R") * 10)),
+             
+        # Ghost 2: เดินเป็นสี่เหลี่ยมเล็กๆ ตรงกลางฉาก (ผ่าน Target หลอก แต่ไม่เก็บ)
+        dict(robot_id=9, start_pos=(4, 4), start_facing=Direction.NORTH,
+             script=parse_path(("F L F L F L F L") * 10)),
+             
+        # Ghost 3: เดินซิกแซกไปมา
+        dict(robot_id=10, start_pos=(9, 9), start_facing=Direction.WEST,
+             script=parse_path(("F F R F F L") * 10)),
     ]
     
-    # เพิ่ม max_turns เป็น 16 เพื่อให้ครอบคลุมเวลาตั้งแต่ Turn 0 ถึง 15
-    return Simulation(robots_config, world, max_turns=16)
-
+    # เซ็ต max_turns เป็น 50 เพื่อให้มีเวลาดู Extras เดินป่วนหลังโชว์จบ
+    return Simulation(robots_config, world, max_turns=50)
 
 # =====================================================================
 #  Pygame renderer
@@ -396,7 +473,8 @@ COLOR_PANEL = (22, 25, 34)
 
 ROBOT_COLORS = {
     1: (90, 169, 230), 2: (239, 100, 97), 3: (242, 193, 78), 4: (177, 140, 255),
-    5: (107, 207, 127), 6: (255, 143, 171), 7: (127, 209, 214),
+    5: (107, 207, 127), 6: (255, 143, 171), 7: (127, 209, 214), 8: (150, 150, 150),  
+    9: (120, 120, 120), 10: (180, 180, 180)
 }
 
 FLASH_DURATION = 0.9  # seconds
