@@ -127,13 +127,15 @@ class World:
         with self.lock:
             return set(self.targets), dict(self.robot_positions), dict(self.robot_facings)
 
-    def maybe_generate_random_targets(self, count=1):
+    def maybe_generate_random_targets(self, count=5):
         with self.lock:
             # ทำให้ฉากดู Busy ตลอดเวลา: ถ้ามี Target บนกระดานน้อยกว่า 5 ชิ้น ให้สุ่มเพิ่ม
-            while len(self.targets) < 5:
-                occupied = set(self.robot_positions.values())
-                # ล็อกพิกัดเหล่านี้ไว้ ห้าม Target แบบสุ่มมาเกิดทับพื้นที่จัดฉากของเรา
-                reserved = {(3, 3), (7, 2), (2, 7), (7, 7)}
+            if len(self.targets) > 0:
+                return 
+            occupied = set(self.robot_positions.values())
+            # ล็อกพิกัดจัดฉากไว้ ไม่ให้สุ่มเกิดทับ
+            reserved = {(3, 3), (7, 2), (2, 7), (7, 7)}
+            for _ in range(count):
                 for _attempt in range(50):
                     pos = (random.randrange(self.size), random.randrange(self.size))
                     if pos not in occupied and pos not in self.targets and pos not in reserved:
@@ -228,10 +230,16 @@ class Simulation:
                 for r in self.robots:
                     msg = f"R{r.id}: "
                     sees = []
-                    # เช็คว่าเห็นอะไรบ้าง แล้วเอาคำมารวมกัน
-                    if r._sensed.get("target_here"): sees.append("See Target Here")
+                    # เช็คข้อมูล Sensor ตามสเปกเป๊ะๆ
                     if r._sensed.get("target_ahead"): sees.append("See Target Ahead")
                     if r._sensed.get("wall_ahead"): sees.append("See Wall")
+                    
+                    # โชว์ ID หุ่นยนต์ตัวอื่นถ้ามองเห็น
+                    r_ahead = r._sensed.get("robots_ahead")
+                    if r_ahead: sees.append(f"See RBs Ahead:{r_ahead}")
+                    
+                    r_here = r._sensed.get("robots_here")
+                    if r_here: sees.append(f"See RBs Here:{r_here}")
                     
                     if sees:
                         details.append(msg + " & ".join(sees))
@@ -315,7 +323,6 @@ class Robot(threading.Thread):
         front = (self.position[0] + dx, self.position[1] + dy)
         self._sensed = {
             "target_ahead": self.sim.world.has_target(front) if self.sim.world.in_bounds(front) else False,
-            "target_here": self.sim.world.has_target(self.position),
             "robots_ahead": [rid for rid in self.sim.world.robots_at(front) if rid != self.id],
             "robots_here": [rid for rid in self.sim.world.robots_at(self.position) if rid != self.id],
             "wall_ahead": not self.sim.world.in_bounds(front) # ตรวจจับกำแพง!
@@ -430,7 +437,7 @@ def build_milestone1_scenario():
 CELL = 50
 MARGIN = 30
 GRID_PX = GRID_SIZE * CELL
-SIDEBAR_W = 420
+SIDEBAR_W = 560
 WIN_W = MARGIN * 2 + GRID_PX + SIDEBAR_W
 WIN_H = MARGIN * 2 + GRID_PX
 
@@ -649,8 +656,8 @@ class PygameRenderer:
                 line("  " + d, (170, 180, 200), self.font_small, 18)
             else: # 5 ตัวหลังปัดไปคอลัมน์ขวา
                 surf = self.font_small.render("  " + d, True, (170, 180, 200))
-                # ขยับแกน x ไปทางขวา 180 pixel, แกน y คำนวณจากตอนเริ่ม
-                self.screen.blit(surf, (x0 + 180, start_y_details + ((index - 5) * 18)))
+                # ขยับแกน x ไปทางขวา 260 pixel, แกน y คำนวณจากตอนเริ่ม
+                self.screen.blit(surf, (x0 + 260, start_y_details + ((index - 5) * 18)))
         
         # ปรับ Y ข้ามโซนคอลัมน์เพื่อไม่ให้ทับกัน
         if len(details) > 0:
