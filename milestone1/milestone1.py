@@ -134,7 +134,7 @@ class World:
                 return 
             occupied = set(self.robot_positions.values())
             # ล็อกพิกัดจัดฉากไว้ ไม่ให้สุ่มเกิดทับ
-            reserved = {(3, 3), (7, 2), (2, 7), (7, 7), (5, 3), (5, 8)}
+            reserved = {(3, 3), (7, 2), (2, 7), (7, 7)}
             for _ in range(count):
                 for _attempt in range(50):
                     pos = (random.randrange(self.size), random.randrange(self.size))
@@ -393,8 +393,8 @@ def parse_path(path_str):
     F = เดินหน้า, L = เลี้ยวซ้าย, R = เลี้ยวขวา, P = หยิบเป้าหมาย, - = หมุนตัวรอคิว
     """
     mapping = {
-            'F': Action.MOVE_FORWARD, 'L': Action.TURN_LEFT, 
-            'R': Action.TURN_RIGHT, 'P': Action.PICKUP, '-': Action.TURN_RIGHT
+            'F': Action.MOVE_FORWARD, 'L': Action.TURN_LEFT,
+            'R': Action.TURN_RIGHT, 'P': Action.PICKUP,
     }
     return {turn: mapping[char] for turn, char in enumerate(path_str.replace(' ', ''))}
 
@@ -409,55 +409,101 @@ def hold(turns):
     assert turns % 4 == 0
     return "R" * turns
 
-def build_milestone1_scenario():
-    world = World(GRID_SIZE)
+# def build_milestone1_scenario():
+#     world = World(GRID_SIZE)
     
-    # วาง Target ของคดีสำคัญ
-    world.add_target((3, 3))   # valid A
-    world.add_target((2, 7))   # illegal (single) -> ตามด้วยทีมเก็บกวาด (valid)
-    world.add_target((7, 7))   # illegal (too many) -> ตามด้วยทีมเก็บกวาด (valid)
-    world.add_target((5, 3))   # valid B (ใหม่)
-    world.add_target((5, 8))   # valid C (ใหม่)
+#     # วาง Target ของคดีสำคัญ
+#     world.add_target((3, 3))   # valid A
+#     world.add_target((2, 7))   # illegal (single) -> ตามด้วยทีมเก็บกวาด (valid)
+#     world.add_target((7, 7))   # illegal (too many) -> ตามด้วยทีมเก็บกวาด (valid)
+#     world.add_target((5, 3))   # valid B (ใหม่)
+#     world.add_target((5, 8))   # valid C (ใหม่)
     
-    # เรียกให้ระบบสุ่ม Target ตัวประกอบลงไปให้เต็มฉากครั้งแรก
-    world.maybe_generate_random_targets()
+#     # เรียกให้ระบบสุ่ม Target ตัวประกอบลงไปให้เต็มฉากครั้งแรก
+#     world.maybe_generate_random_targets()
 
-    robots_config = [
-        # THE ACTORS (1-7): เดินลาดตระเวนจนถึงคิว
-        dict(robot_id=1, start_pos=(1, 3), start_facing=Direction.EAST, script=parse_path(pace(2) + "F F P " + pace(5))),
-        dict(robot_id=2, start_pos=(3, 1), start_facing=Direction.SOUTH, script=parse_path(pace(2) + "F F P " + pace(5))),
-        dict(robot_id=3, start_pos=(7, 4), start_facing=Direction.NORTH, script=parse_path(pace(3) + "F F P " + pace(5))),
-        dict(robot_id=4, start_pos=(2, 9), start_facing=Direction.NORTH, script=parse_path(pace(4) + "F F P " + pace(5))),
-        dict(robot_id=5, start_pos=(5, 7), start_facing=Direction.EAST, script=parse_path(pace(5) + "F F P " + pace(5))),
-        dict(robot_id=6, start_pos=(7, 9), start_facing=Direction.NORTH, script=parse_path(pace(5) + "F F P " + pace(5))),
-        dict(robot_id=7, start_pos=(9, 7), start_facing=Direction.WEST, script=parse_path(pace(5) + "F F P " + pace(5))),
+#     robots_config = [
+#         # THE ACTORS (1-7): เดินลาดตระเวนจนถึงคิว
+#         dict(robot_id=1, start_pos=(1, 3), start_facing=Direction.EAST, script=parse_path(pace(2) + "F F P " + pace(5))),
+#         dict(robot_id=2, start_pos=(3, 1), start_facing=Direction.SOUTH, script=parse_path(pace(2) + "F F P " + pace(5))),
+#         dict(robot_id=3, start_pos=(7, 4), start_facing=Direction.NORTH, script=parse_path(pace(3) + "F F P " + pace(5))),
+#         dict(robot_id=4, start_pos=(2, 9), start_facing=Direction.NORTH, script=parse_path(pace(4) + "F F P " + pace(5))),
+#         dict(robot_id=5, start_pos=(5, 7), start_facing=Direction.EAST, script=parse_path(pace(5) + "F F P " + pace(5))),
+#         dict(robot_id=6, start_pos=(7, 9), start_facing=Direction.NORTH, script=parse_path(pace(5) + "F F P " + pace(5))),
+#         dict(robot_id=7, start_pos=(9, 7), start_facing=Direction.WEST, script=parse_path(pace(5) + "F F P " + pace(5))),
         
-        # THE EXTRAS (8-10): เดินป่วน + ลองสั่งเดินชนกำแพงดู (ตัว F รัวๆ) เพื่อดูฟีเจอร์หลบกำแพงอัตโนมัติ
-        dict(robot_id=8, start_pos=(0, 0), start_facing=Direction.EAST, script=parse_path(("F" * 20))), # สั่งเดินเกินจอ มันจะเลี้ยวหลบเอง!
-        dict(robot_id=9, start_pos=(4, 4), start_facing=Direction.NORTH, script=parse_path(("F F L F F L F F L F F L") * 10)),
-        dict(robot_id=10, start_pos=(9, 0), start_facing=Direction.SOUTH, script=parse_path(("F" * 20))),
+#         # THE EXTRAS (8-10): เดินป่วน + ลองสั่งเดินชนกำแพงดู (ตัว F รัวๆ) เพื่อดูฟีเจอร์หลบกำแพงอัตโนมัติ
+#         dict(robot_id=8, start_pos=(0, 0), start_facing=Direction.EAST, script=parse_path(("F" * 20))), # สั่งเดินเกินจอ มันจะเลี้ยวหลบเอง!
+#         dict(robot_id=9, start_pos=(4, 4), start_facing=Direction.NORTH, script=parse_path(("F F L F F L F F L F F L") * 10)),
+#         dict(robot_id=10, start_pos=(9, 0), start_facing=Direction.SOUTH, script=parse_path(("F" * 20))),
 
-        # --- CLEANUP CREW: เก็บ (2,7) ให้ถูกวิธีหลัง illegal attempt ของ robot4 (turn 26) ---
-        # ทั้งคู่เดิน 2 ช่องพอดี รอ (hold) 36 turn ก่อน แล้วเดิน 2 แล้วหยิบ -> pickup ที่ turn 38
-        dict(robot_id=11, start_pos=(0, 7), start_facing=Direction.EAST, script=parse_path(hold(36) + "F F P")),
-        dict(robot_id=12, start_pos=(2, 5), start_facing=Direction.SOUTH, script=parse_path(hold(36) + "F F P")),
+#         # --- CLEANUP CREW: เก็บ (2,7) ให้ถูกวิธีหลัง illegal attempt ของ robot4 (turn 26) ---
+#         # ทั้งคู่เดิน 2 ช่องพอดี รอ (hold) 36 turn ก่อน แล้วเดิน 2 แล้วหยิบ -> pickup ที่ turn 38
+#         dict(robot_id=11, start_pos=(0, 7), start_facing=Direction.EAST, script=parse_path(hold(36) + "F F P")),
+#         dict(robot_id=12, start_pos=(2, 5), start_facing=Direction.SOUTH, script=parse_path(hold(36) + "F F P")),
 
-        # --- CLEANUP CREW: เก็บ (7,7) ให้ถูกวิธีหลัง illegal attempt ของ robot5,6,7 (turn 32) ---
-        # ทั้งคู่เดิน 3 ช่องพอดี รอ 40 turn ก่อน แล้วเดิน 3 แล้วหยิบ -> pickup ที่ turn 43
-        dict(robot_id=13, start_pos=(4, 7), start_facing=Direction.EAST, script=parse_path(hold(40) + "F F F P")),
-        dict(robot_id=14, start_pos=(7, 4), start_facing=Direction.SOUTH, script=parse_path(hold(40) + "F F F P")),
+#         # --- CLEANUP CREW: เก็บ (7,7) ให้ถูกวิธีหลัง illegal attempt ของ robot5,6,7 (turn 32) ---
+#         # ทั้งคู่เดิน 3 ช่องพอดี รอ 40 turn ก่อน แล้วเดิน 3 แล้วหยิบ -> pickup ที่ turn 43
+#         dict(robot_id=13, start_pos=(4, 7), start_facing=Direction.EAST, script=parse_path(hold(40) + "F F F P")),
+#         dict(robot_id=14, start_pos=(7, 4), start_facing=Direction.SOUTH, script=parse_path(hold(40) + "F F F P")),
 
-        # --- VALID B (ใหม่) ที่ (5,3): รอ 44 turn แล้วเดิน 2 แล้วหยิบ -> pickup ที่ turn 46 ---
-        dict(robot_id=15, start_pos=(5, 1), start_facing=Direction.SOUTH, script=parse_path(hold(44) + "F F P")),
-        dict(robot_id=16, start_pos=(7, 3), start_facing=Direction.WEST, script=parse_path(hold(44) + "F F P")),
+#         # --- VALID B (ใหม่) ที่ (5,3): รอ 44 turn แล้วเดิน 2 แล้วหยิบ -> pickup ที่ turn 46 ---
+#         dict(robot_id=15, start_pos=(5, 1), start_facing=Direction.SOUTH, script=parse_path(hold(44) + "F F P")),
+#         dict(robot_id=16, start_pos=(7, 3), start_facing=Direction.WEST, script=parse_path(hold(44) + "F F P")),
 
-        # --- VALID C (ใหม่) ที่ (5,8): รอ 48 turn แล้วเดิน 3 แล้วหยิบ -> pickup ที่ turn 51 ---
-        dict(robot_id=17, start_pos=(5, 5), start_facing=Direction.SOUTH, script=parse_path(hold(48) + "F F F P")),
-        dict(robot_id=18, start_pos=(2, 8), start_facing=Direction.EAST, script=parse_path(hold(48) + "F F F P")),
-    ]
+#         # --- VALID C (ใหม่) ที่ (5,8): รอ 48 turn แล้วเดิน 3 แล้วหยิบ -> pickup ที่ turn 51 ---
+#         dict(robot_id=17, start_pos=(5, 5), start_facing=Direction.SOUTH, script=parse_path(hold(48) + "F F F P")),
+#         dict(robot_id=18, start_pos=(2, 8), start_facing=Direction.EAST, script=parse_path(hold(48) + "F F F P")),
+#     ]
            
     
-    return Simulation(robots_config, world, max_turns=70)
+#     return Simulation(robots_config, world, max_turns=70)
+
+def build_milestone1_scenario():
+    world = World(GRID_SIZE)
+
+    world.add_target((3, 3))   # valid A
+    world.add_target((2, 7))   # illegal(single) -> valid ทีหลัง (reuse R4,R5)
+    world.add_target((7, 7))   # illegal(too many) -> valid ทีหลัง (reuse R6,R7)
+    # (7,2) ไม่มี target เลย -> illegal(empty cell) case ของ R3
+
+    world.maybe_generate_random_targets()  # no-op ตอนนี้ เพราะมี target 3 ชิ้นอยู่แล้ว
+
+    robots_config = [
+        # --- Valid A ตรงๆ ที่ (3,3) ---
+        dict(robot_id=1, start_pos=(1, 3), start_facing=Direction.EAST,
+             script=parse_path(pace(2) + "F F P " + pace(5))),
+        dict(robot_id=2, start_pos=(3, 1), start_facing=Direction.SOUTH,
+             script=parse_path(pace(2) + "F F P " + pace(5))),
+
+        # --- Illegal (empty cell) ที่ (7,2) -- ไม่มี target ให้เก็บ ไม่ต้องมี cleanup ---
+        dict(robot_id=3, start_pos=(7, 4), start_facing=Direction.NORTH,
+             script=parse_path(pace(3) + "F F P " + pace(5))),
+
+        # --- (2,7): R4 หยิบคนเดียวก่อน (illegal, turn25) แล้วรออยู่เฉยๆ
+        #     จนกระทั่ง R5 มาถึงพอดีที่ turn37 แล้วหยิบพร้อมกัน (valid) ---
+        dict(robot_id=4, start_pos=(1, 7), start_facing=Direction.EAST,
+             script=parse_path(pace(4) + "F" + "P" + "R" * 11 + "P")),
+        dict(robot_id=5, start_pos=(2, 6), start_facing=Direction.SOUTH,
+             script=parse_path("R" * 36 + "F" + "P")),
+
+        # --- (7,7): R6,R7,R8 หยิบพร้อมกันทั้ง 3 ก่อน (illegal, turn32)
+        #     แล้ว R8 แยกตัวออกไป เหลือ R6,R7 รอแล้วหยิบซ้ำที่ turn39 (valid) ---
+        dict(robot_id=6, start_pos=(5, 7), start_facing=Direction.EAST,
+             script=parse_path(pace(5) + "F" + "F" + "P" + "R" * 6 + "P")),
+        dict(robot_id=7, start_pos=(7, 9), start_facing=Direction.NORTH,
+             script=parse_path(pace(5) + "F" + "F" + "P" + "R" * 6 + "P")),
+        dict(robot_id=8, start_pos=(9, 7), start_facing=Direction.WEST,
+             script=parse_path(pace(5) + "F" + "F" + "P" + pace(5))),  # ไม่มี P ที่สอง ตั้งใจแยกตัวออก
+
+        # --- Environment extras (ไม่มี P ในสคริปต์เลย จึงไม่มีทางไปกระทบ referee) ---
+        dict(robot_id=9, start_pos=(0, 0), start_facing=Direction.EAST,
+             script=parse_path("F" * 20)),
+        dict(robot_id=10, start_pos=(9, 0), start_facing=Direction.SOUTH,
+             script=parse_path("F" * 20)),
+    ]
+    # turn39 คือ valid ครั้งสุดท้าย, turn40 ควรเห็น target สุ่มใหม่โผล่ขึ้นมา
+    return Simulation(robots_config, world, max_turns=55)
 
 
 # =====================================================================
@@ -469,24 +515,30 @@ MARGIN = 30
 GRID_PX = GRID_SIZE * CELL
 SIDEBAR_W = 560
 WIN_W = MARGIN * 2 + GRID_PX + SIDEBAR_W
-WIN_H = MARGIN * 2 + GRID_PX + 90
+WIN_H = MARGIN * 2 + GRID_PX + 40
 
 COLOR_BG = (14, 16, 21)
 COLOR_GRID_BG = (18, 21, 29)
 COLOR_GRID_LINE = (42, 47, 59)
 COLOR_TEXT = (231, 233, 238)
 COLOR_TEXT_DIM = (139, 146, 163)
-COLOR_TARGET = (242, 193, 78)
+COLOR_TARGET = (255, 255, 255)
 COLOR_VALID = (79, 209, 165)
 COLOR_ILLEGAL = (239, 100, 97)
 COLOR_PANEL = (22, 25, 34)
 
 ROBOT_COLORS = {
-    1: (90, 169, 230), 2: (239, 100, 97), 3: (242, 193, 78), 4: (177, 140, 255),
-    5: (107, 207, 127), 6: (255, 143, 171), 7: (127, 209, 214), 
-    8: (150, 150, 150), 9: (120, 120, 120), 10: (180, 180, 180), # Ghost Colors
-    11: (255, 200, 87), 12: (99, 179, 237), 13: (246, 135, 179), 14: (129, 199, 132),
-    15: (186, 104, 200), 16: (77, 208, 225), 17: (255, 138, 101), 18: (174, 213, 129),
+    1: (90, 169, 230),   # Light Blue
+    2: (239, 100, 97),   # Coral Red
+    3: (242, 193, 78),   # Warm Yellow
+    4: (177, 140, 255),  # Purple
+    5: (107, 207, 127),  # Light Green
+    6: (255, 143, 171),  # Pink
+    7: (127, 209, 214),  # Cyan
+    # --- New vibrant colors for 8, 9, 10 ---
+    8: (255, 167, 38),   # Vibrant Orange
+    9: (174, 213, 129),  # Lime Green
+    10: (77, 208, 225),  # Bright Teal
 }
 
 FLASH_DURATION = 0.9  # seconds
@@ -646,10 +698,6 @@ class PygameRenderer:
                 pts.append((cx + rx, cy + ry))
             pygame.draw.polygon(self.screen, ROBOT_COLORS[rid], pts)
             pygame.draw.polygon(self.screen, COLOR_BG, pts, width=1)
-            
-            # --- ไฮไลต์นักแสดงหลักให้อาจารย์มองเห็นง่ายๆ ---
-            if rid <= 7:
-                pygame.draw.circle(self.screen, (255, 255, 255), (cx, cy), 20, 2)
                 
             label = self.font_small.render(str(rid), True, ROBOT_COLORS[rid])
             self.screen.blit(label, (cx - label.get_width() // 2, cy + 16))
@@ -694,16 +742,16 @@ class PygameRenderer:
                         text_color = ROBOT_COLORS[rid]
                 except:
                     pass
-            if index < 9: # 9 ตัวแรกอยู่คอลัมน์ซ้าย
+            if index < 5: # 5 ตัวแรกอยู่คอลัมน์ซ้าย
                 line("  " + d, text_color, self.font_small, 18)
-            else: # 9 ตัวหลังปัดไปคอลัมน์ขวา
+            else: # 5 ตัวหลังปัดไปคอลัมน์ขวา
                 surf = self.font_small.render("  " + d, True, text_color)
                 # ขยับแกน x ไปทางขวา 260 pixel, แกน y คำนวณจากตอนเริ่ม
-                self.screen.blit(surf, (x0 + 260, start_y_details + ((index - 9) * 18)))
+                self.screen.blit(surf, (x0 + 260, start_y_details + ((index - 5) * 18)))
         
         # ปรับ Y ข้ามโซนคอลัมน์เพื่อไม่ให้ทับกัน
         if len(details) > 0:
-            y = start_y_details + (min(len(details), 9) * 18) + 15
+            y = start_y_details + (min(len(details), 5) * 18) + 15
 
         # -----------------------------------------------------
         # โซน Referee Log (ดึงลงมาให้มีระยะห่างที่ปลอดภัย)
