@@ -1,12 +1,39 @@
 """
 Cyber Physical Robotics - Milestone 1 (with a live pygame visualization)
 =========================================================================
-This is the SAME concurrent simulation as cpr_milestone1.py -- real
-Python threads, one per robot, synchronized every phase by
+Real Python threads, one per robot, synchronized every phase by
 threading.Barrier -- with a pygame window attached so you can watch it
 run: robots drawn as colored arrows (pointing the way they're facing),
-targets as amber circles, cells flashing green/red when the referee
+targets as circles, cells flashing green/red when the referee
 validates or rejects a pickup attempt.
+
+MOVEMENT NOTE: robots patrol in small SQUARE LOOPS (walk forward N,
+turn right, x4 sides) instead of the old back-and-forth "F L L F L L"
+shuffle. A square loop always returns the robot to its exact starting
+position AND facing after a whole number of loops -- so it is just as
+easy to time precisely as the old back-and-forth pattern, but looks
+like genuine patrolling instead of twitching on the same two cells.
+
+DESIGN NOTE -- how 10 robots cover 3 valid + 3 illegal cases:
+Robots are REUSED across an illegal attempt and a later valid pickup
+on the SAME cell, instead of sending in a separate "cleanup crew":
+  - (3,3)  R1,R2            -> straight VALID pickup
+  - (7,2)  R3                -> ILLEGAL (empty cell, no target ever placed)
+  - (2,7)  R4 alone          -> ILLEGAL (single robot)
+           R4 stays put; R5 arrives and joins it the very next turn
+           R4 + R5 together  -> VALID
+  - (7,7)  R6,R7,R8 together -> ILLEGAL (3 robots)
+           R8 diverges; R6+R7 pick up together the very next turn
+           R6 + R7 together  -> VALID
+That's exactly 3 valid + 3 illegal cases using only R1-R8.
+R9, R10 are pure "environment" extras: they patrol a bigger loop and
+never carry a PICKUP action, so they can never affect the referee.
+
+Because all three originally-placed targets are eventually captured,
+the board hits ZERO targets partway through the run -- which is
+exactly when `maybe_generate_random_targets` (triggered only on a
+fully empty board, per the assignment's pseudocode) fires and drops
+5 fresh random targets on the board.
 
 Install once:
     pip install pygame
@@ -331,9 +358,10 @@ class Robot(threading.Thread):
     def decide(self):
         action = self.script.get(self.turn, Action.TURN_RIGHT)
                 
-        # --- DYNAMIC COLLISION AVOIDANCE ---
-        # ถ่ายทอดความฉลาด: ถ้าในสคริปต์สั่งให้เดินหน้า แต่ตา (sensed) เห็นกำแพง
-        # ให้เปลี่ยนการตัดสินใจเป็น "สุ่มเลี้ยวซ้ายหรือขวาแทน" 
+        # Safety net only -- with patrol()-based scripts this should
+                # never actually trigger for R1-R10 (all patrol loops and
+                # approaches were chosen to stay in bounds), but it's kept as
+                # a defensive fallback in case a script ever runs off the edge.
         if action == Action.MOVE_FORWARD and self._sensed.get("wall_ahead"):
             action = random.choice([Action.TURN_LEFT, Action.TURN_RIGHT])
                     
@@ -390,24 +418,31 @@ class Robot(threading.Thread):
 def parse_path(path_str):
     """
     ตัวแปลง String ให้กลายเป็น Script Dictionary
-    F = เดินหน้า, L = เลี้ยวซ้าย, R = เลี้ยวขวา, P = หยิบเป้าหมาย, - = หมุนตัวรอคิว
+    F = เดินหน้า, L = เลี้ยวซ้าย, R = เลี้ยวขวา, P = หยิบเป้าหมาย
     """
     mapping = {
             'F': Action.MOVE_FORWARD, 'L': Action.TURN_LEFT,
             'R': Action.TURN_RIGHT, 'P': Action.PICKUP,
     }
     return {turn: mapping[char] for turn, char in enumerate(path_str.replace(' ', ''))}
+def patrol(loops=1, n=1):
+    """เดินลาดตระเวนเป็นวงสี่เหลี่ยม: เดินหน้า n ช่อง แล้วเลี้ยวขวา ทำครบ 4 ด้าน
+    จะกลับมาตำแหน่งและทิศเดิมเป๊ะเสมอ (ไม่ว่า loops จะเป็นเท่าไหร่) จึงคุม
+    turn ให้ตรงเวลาได้แม่นยำเหมือน pace() เดิม แต่ดูเหมือนลาดตระเวนจริงๆ
+    แทนที่จะแกว่งไปมาบนเซลล์เดิม"""
+    one_loop = ("F" * n + "R") * 4
+    return one_loop * loops
 
-def pace(times):
-    # เดิน 1 ช่อง เลี้ยวกลับหลัง หันกลับมาที่เดิม (ใช้เวลา 6 Turn ต่อ 1 รอบ)
-    return "F L L F L L " * times
+# def pace(times):
+#     # เดิน 1 ช่อง เลี้ยวกลับหลัง หันกลับมาที่เดิม (ใช้เวลา 6 Turn ต่อ 1 รอบ)
+#     return "F L L F L L " * times
 
 
-def hold(turns):
-    # รอเฉยๆ แบบไม่ขยับตำแหน่งเลย (หมุนขวาครบ 4 ครั้ง = หันหน้ากลับทิศเดิมเป๊ะ)
-    # turns ต้องเป็นจำนวนเท่าของ 4 เท่านั้น เพื่อให้ facing กลับมาตรงเป๊ะก่อนเดินจริง
-    assert turns % 4 == 0
-    return "R" * turns
+# def hold(turns):
+#     # รอเฉยๆ แบบไม่ขยับตำแหน่งเลย (หมุนขวาครบ 4 ครั้ง = หันหน้ากลับทิศเดิมเป๊ะ)
+#     # turns ต้องเป็นจำนวนเท่าของ 4 เท่านั้น เพื่อให้ facing กลับมาตรงเป๊ะก่อนเดินจริง
+#     assert turns % 4 == 0
+#     return "R" * turns
 
 # def build_milestone1_scenario():
 #     world = World(GRID_SIZE)
@@ -459,6 +494,52 @@ def hold(turns):
     
 #     return Simulation(robots_config, world, max_turns=70)
 
+# def build_milestone1_scenario():
+#     world = World(GRID_SIZE)
+
+#     world.add_target((3, 3))   # valid A
+#     world.add_target((2, 7))   # illegal(single) -> valid ทีหลัง (reuse R4,R5)
+#     world.add_target((7, 7))   # illegal(too many) -> valid ทีหลัง (reuse R6,R7)
+#     # (7,2) ไม่มี target เลย -> illegal(empty cell) case ของ R3
+
+#     world.maybe_generate_random_targets()  # no-op ตอนนี้ เพราะมี target 3 ชิ้นอยู่แล้ว
+
+#     robots_config = [
+#         # --- Valid A ตรงๆ ที่ (3,3) ---
+#         dict(robot_id=1, start_pos=(1, 3), start_facing=Direction.EAST,
+#              script=parse_path(pace(2) + "F F P " + pace(5))),
+#         dict(robot_id=2, start_pos=(3, 1), start_facing=Direction.SOUTH,
+#              script=parse_path(pace(2) + "F F P " + pace(5))),
+
+#         # --- Illegal (empty cell) ที่ (7,2) -- ไม่มี target ให้เก็บ ไม่ต้องมี cleanup ---
+#         dict(robot_id=3, start_pos=(7, 4), start_facing=Direction.NORTH,
+#              script=parse_path(pace(3) + "F F P " + pace(5))),
+
+#         # --- (2,7): R4 หยิบคนเดียวก่อน (illegal, turn25) แล้วรออยู่เฉยๆ
+#         #     จนกระทั่ง R5 มาถึงพอดีที่ turn37 แล้วหยิบพร้อมกัน (valid) ---
+#         dict(robot_id=4, start_pos=(1, 7), start_facing=Direction.EAST,
+#              script=parse_path(pace(4) + "F" + "P" + "R" * 11 + "P")),
+#         dict(robot_id=5, start_pos=(2, 6), start_facing=Direction.SOUTH,
+#              script=parse_path("R" * 36 + "F" + "P")),
+
+#         # --- (7,7): R6,R7,R8 หยิบพร้อมกันทั้ง 3 ก่อน (illegal, turn32)
+#         #     แล้ว R8 แยกตัวออกไป เหลือ R6,R7 รอแล้วหยิบซ้ำที่ turn39 (valid) ---
+#         dict(robot_id=6, start_pos=(5, 7), start_facing=Direction.EAST,
+#              script=parse_path(pace(5) + "F" + "F" + "P" + "R" * 6 + "P")),
+#         dict(robot_id=7, start_pos=(7, 9), start_facing=Direction.NORTH,
+#              script=parse_path(pace(5) + "F" + "F" + "P" + "R" * 6 + "P")),
+#         dict(robot_id=8, start_pos=(9, 7), start_facing=Direction.WEST,
+#              script=parse_path(pace(5) + "F" + "F" + "P" + pace(5))),  # ไม่มี P ที่สอง ตั้งใจแยกตัวออก
+
+#         # --- Environment extras (ไม่มี P ในสคริปต์เลย จึงไม่มีทางไปกระทบ referee) ---
+#         dict(robot_id=9, start_pos=(0, 0), start_facing=Direction.EAST,
+#              script=parse_path("F" * 20)),
+#         dict(robot_id=10, start_pos=(9, 0), start_facing=Direction.SOUTH,
+#              script=parse_path("F" * 20)),
+#     ]
+#     # turn39 คือ valid ครั้งสุดท้าย, turn40 ควรเห็น target สุ่มใหม่โผล่ขึ้นมา
+#     return Simulation(robots_config, world, max_turns=55)
+
 def build_milestone1_scenario():
     world = World(GRID_SIZE)
 
@@ -470,40 +551,39 @@ def build_milestone1_scenario():
     world.maybe_generate_random_targets()  # no-op ตอนนี้ เพราะมี target 3 ชิ้นอยู่แล้ว
 
     robots_config = [
-        # --- Valid A ตรงๆ ที่ (3,3) ---
+        # --- Valid A ตรงๆ ที่ (3,3): ลาดตระเวน 1 รอบก่อนเข้าไปหยิบ ---
         dict(robot_id=1, start_pos=(1, 3), start_facing=Direction.EAST,
-             script=parse_path(pace(2) + "F F P " + pace(5))),
+             script=parse_path(patrol(1) + "F" + "F" + "P" + patrol(10))),
         dict(robot_id=2, start_pos=(3, 1), start_facing=Direction.SOUTH,
-             script=parse_path(pace(2) + "F F P " + pace(5))),
+             script=parse_path(patrol(1) + "F" + "F" + "P" + patrol(10))),
 
         # --- Illegal (empty cell) ที่ (7,2) -- ไม่มี target ให้เก็บ ไม่ต้องมี cleanup ---
         dict(robot_id=3, start_pos=(7, 4), start_facing=Direction.NORTH,
-             script=parse_path(pace(3) + "F F P " + pace(5))),
+             script=parse_path(patrol(2) + "F" + "F" + "P" + patrol(10))),
 
-        # --- (2,7): R4 หยิบคนเดียวก่อน (illegal, turn25) แล้วรออยู่เฉยๆ
-        #     จนกระทั่ง R5 มาถึงพอดีที่ turn37 แล้วหยิบพร้อมกัน (valid) ---
+        # --- (2,7): R4 หยิบคนเดียวก่อน (illegal) แล้วยังอยู่ตรงนั้น
+        #     turn ถัดไป R5 มาถึงพอดีแล้วหยิบพร้อมกัน (valid) ---
         dict(robot_id=4, start_pos=(1, 7), start_facing=Direction.EAST,
-             script=parse_path(pace(4) + "F" + "P" + "R" * 11 + "P")),
-        dict(robot_id=5, start_pos=(2, 6), start_facing=Direction.SOUTH,
-             script=parse_path("R" * 36 + "F" + "P")),
+             script=parse_path(patrol(3) + "F" + "P" + "P" + patrol(10))),
+        dict(robot_id=5, start_pos=(2, 5), start_facing=Direction.SOUTH,
+             script=parse_path(patrol(3) + "F" + "F" + "P" + patrol(10))),
 
-        # --- (7,7): R6,R7,R8 หยิบพร้อมกันทั้ง 3 ก่อน (illegal, turn32)
-        #     แล้ว R8 แยกตัวออกไป เหลือ R6,R7 รอแล้วหยิบซ้ำที่ turn39 (valid) ---
+        # --- (7,7): R6,R7,R8 หยิบพร้อมกันทั้ง 3 ก่อน (illegal)
+        #     turn ถัดไป R8 แยกตัวออก เหลือ R6,R7 หยิบซ้ำ (valid) ---
         dict(robot_id=6, start_pos=(5, 7), start_facing=Direction.EAST,
-             script=parse_path(pace(5) + "F" + "F" + "P" + "R" * 6 + "P")),
+             script=parse_path(patrol(4) + "F" + "F" + "P" + "P" + patrol(10))),
         dict(robot_id=7, start_pos=(7, 9), start_facing=Direction.NORTH,
-             script=parse_path(pace(5) + "F" + "F" + "P" + "R" * 6 + "P")),
+             script=parse_path(patrol(4) + "F" + "F" + "P" + "P" + patrol(10))),
         dict(robot_id=8, start_pos=(9, 7), start_facing=Direction.WEST,
-             script=parse_path(pace(5) + "F" + "F" + "P" + pace(5))),  # ไม่มี P ที่สอง ตั้งใจแยกตัวออก
+             script=parse_path(patrol(4) + "F" + "F" + "P" + "R" + patrol(10))),  # แยกตัวออก ไม่หยิบซ้ำ
 
-        # --- Environment extras (ไม่มี P ในสคริปต์เลย จึงไม่มีทางไปกระทบ referee) ---
-        dict(robot_id=9, start_pos=(0, 0), start_facing=Direction.EAST,
-             script=parse_path("F" * 20)),
-        dict(robot_id=10, start_pos=(9, 0), start_facing=Direction.SOUTH,
-             script=parse_path("F" * 20)),
+        # --- Environment extras: ลาดตระเวนวงใหญ่กว่า ไม่มี P เลยในสคริปต์ ---
+        dict(robot_id=9, start_pos=(2, 2), start_facing=Direction.EAST,
+             script=parse_path(patrol(10, n=2))),
+        dict(robot_id=10, start_pos=(6, 2), start_facing=Direction.EAST,
+             script=parse_path(patrol(10, n=2))),
     ]
-    # turn39 คือ valid ครั้งสุดท้าย, turn40 ควรเห็น target สุ่มใหม่โผล่ขึ้นมา
-    return Simulation(robots_config, world, max_turns=55)
+    return Simulation(robots_config, world, max_turns=50)
 
 
 # =====================================================================
