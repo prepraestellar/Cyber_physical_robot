@@ -1,48 +1,3 @@
-"""
-Cyber Physical Robotics - Milestone 1 (with a live pygame visualization)
-=========================================================================
-Real Python threads, one per robot, synchronized every phase by
-threading.Barrier -- with a pygame window attached so you can watch it
-run: robots drawn as colored arrows (pointing the way they're facing),
-targets as circles, cells flashing green/red when the referee
-validates or rejects a pickup attempt.
-
-MOVEMENT NOTE: robots patrol in small SQUARE LOOPS (walk forward N,
-turn right, x4 sides) instead of the old back-and-forth "F L L F L L"
-shuffle. A square loop always returns the robot to its exact starting
-position AND facing after a whole number of loops -- so it is just as
-easy to time precisely as the old back-and-forth pattern, but looks
-like genuine patrolling instead of twitching on the same two cells.
-
-DESIGN NOTE -- how 10 robots cover 3 valid + 3 illegal cases:
-Robots are REUSED across an illegal attempt and a later valid pickup
-on the SAME cell, instead of sending in a separate "cleanup crew":
-  - (3,3)  R1,R2            -> straight VALID pickup
-  - (7,2)  R3                -> ILLEGAL (empty cell, no target ever placed)
-  - (2,7)  R4 alone          -> ILLEGAL (single robot)
-           R4 stays put; R5 arrives and joins it the very next turn
-           R4 + R5 together  -> VALID
-  - (7,7)  R6,R7,R8 together -> ILLEGAL (3 robots)
-           R8 diverges; R6+R7 pick up together the very next turn
-           R6 + R7 together  -> VALID
-That's exactly 3 valid + 3 illegal cases using only R1-R8.
-R9, R10 are pure "environment" extras: they patrol a bigger loop and
-never carry a PICKUP action, so they can never affect the referee.
-
-Because all three originally-placed targets are eventually captured,
-the board hits ZERO targets partway through the run -- which is
-exactly when `maybe_generate_random_targets` (triggered only on a
-fully empty board, per the assignment's pseudocode) fires and drops
-5 fresh random targets on the board.
-
-Controls (also printed to the console on startup):
-    SPACE        play / pause
-    RIGHT ARROW  step forward one phase (works while paused)
-    UP / DOWN    speed up / slow down
-    R            restart the scenario (once it has finished)
-    ESC or Q     quit
-"""
-
 import math
 import sys
 import time
@@ -55,18 +10,13 @@ import pygame
 
 GRID_SIZE = 10
 
-# =====================================================================
-#  Simulation core -- identical in spirit to cpr_milestone1.py.
-#  Robots are real threads; every phase is an explicit barrier; the
-#  referee runs single-threaded strictly between decide and perform.
-# =====================================================================
-
 class Direction(Enum):
     NORTH = 0
     EAST = 1
     SOUTH = 2
     WEST = 3
 
+    #go forward delta for each direction, used to calculate new position with this grid order 
     def delta(self):
         return {
             Direction.NORTH: (0, -1),
@@ -104,10 +54,6 @@ class Decision:
 
 
 class World:
-    """Shared grid state. Mutated only during 'perform', which is
-    barrier-separated from the next turn's 'sense' -- so sensing never
-    races with the previous turn's writes. The lock is a defensive
-    measure for the handful of shared-dict/set operations."""
 
     def __init__(self, size=GRID_SIZE):
         self.size = size
@@ -142,9 +88,6 @@ class World:
         return 0 <= x < self.size and 0 <= y < self.size
 
     def snapshot(self):
-        """Cheap, consistent read for the renderer. Safe to call any
-        time the renderer is invoked, since it only runs at points
-        where every robot thread is blocked on a barrier or gate."""
         with self.lock:
             return set(self.targets), dict(self.robot_positions), dict(self.robot_facings)
 
@@ -168,10 +111,6 @@ class Simulation:
         self.max_turns = max_turns
 
         n = len(robots_config)
-        # +1 party = this simulation/main thread, so every phase is an
-        # explicit barrier across all robots -- genuinely parallel and
-        # synchronized, not a sequential for-loop.
-        # each phase has its own barrier 
         self.barrier_read = threading.Barrier(n + 1)
         self.barrier_sense = threading.Barrier(n + 1)
         self.barrier_decide = threading.Barrier(n + 1)
@@ -179,6 +118,7 @@ class Simulation:
         self.barrier_send = threading.Barrier(n + 1)
         self.perform_gate = threading.Event()
 
+        self.random_mode = False
         self.decisions = {}
         self.valid_pickup_cells = set()
         self.illegal_log = []
@@ -225,7 +165,7 @@ class Simulation:
             r.start()
 
         for turn in range(self.max_turns):
-            # ตรวจสอบและเพิ่ม Target แบบสุ่มในทุกๆ Turn
+            # ตรวจสอบและเพิ่ม Target แบบสุ่มในทุก ๆ Turn
             self.world.maybe_generate_random_targets()
             
             self.perform_gate.clear()
@@ -236,7 +176,6 @@ class Simulation:
 
             self.barrier_read.wait()
             if renderer:
-                # โชว์ครบทุกตัว ไม่ตัดทิ้งแล้ว
                 details = [f"R{r.id}: {len(r.messages_this_turn)} msgs rx'd" for r in self.robots]
                 renderer.checkpoint("1 - Read Messages", turn, details=details)
 
@@ -250,11 +189,9 @@ class Simulation:
                 for r in self.robots:
                     msg = f"R{r.id}: "
                     sees = []
-                    # เช็คข้อมูล Sensor ตามสเปกเป๊ะๆ
                     if r._sensed.get("target_ahead"): sees.append("See Target Ahead")
                     if r._sensed.get("wall_ahead"): sees.append("See Wall")
-                    
-                    # โชว์ ID หุ่นยนต์ตัวอื่นถ้ามองเห็น
+        
                     r_ahead = r._sensed.get("robots_ahead")
                     if r_ahead: sees.append(f"See RBs Ahead:{r_ahead}")
                     
@@ -276,7 +213,6 @@ class Simulation:
                 acts = [f"R{r.id} plans {r._decided_action.name}" for r in self.robots]
                 renderer.checkpoint("3 - Decide Action", turn, details=acts)
 
-            # --- referee runs here: single-threaded, before ANY robot acts ---
             # ==============================
             # PHASE 4: REFEREE CHECK
             # ==============================
@@ -333,9 +269,9 @@ class Robot(threading.Thread):
         self._sensed = {}
 
     def read_messages(self):
-        self.messages_this_turn = []
-        while not self.inbox.empty():
-            self.messages_this_turn.append(self.inbox.get_nowait())
+        self.messages_this_turn = [] #ล้างข้อมูล message ของ turn ก่อน
+        while not self.inbox.empty(): #ตราบใดที่ mailbox ยังมี message อยู่ ให้เอาออกมา
+            self.messages_this_turn.append(self.inbox.get_nowait()) #เอา message หนึ่งอันออกจาก queue
 
     def sense(self):
         # ลืมตาดูสภาพแวดล้อม และบันทึกข้อมูลไว้ในสมอง (self._sensed)
@@ -349,12 +285,15 @@ class Robot(threading.Thread):
         }
 
     def decide(self):
-        action = self.script.get(self.turn, Action.TURN_RIGHT)
+        if self.sim.random_mode:
+            # ถ้าเปิดโหมด Random ให้สุ่ม Action (เดิน, เลี้ยวซ้าย, เลี้ยวขวา, หยิบ)
+            action = random.choice(list(Action))
+        else:
+            # ถ้าปิดโหมด Random ให้ดึงคำสั่งจาก Script ตามปกติ
+            action = self.script.get(self.turn, Action.TURN_RIGHT)
+        # -----------------------
                 
-        # Safety net only -- with patrol()-based scripts this should
-                # never actually trigger for R1-R10 (all patrol loops and
-                # approaches were chosen to stay in bounds), but it's kept as
-                # a defensive fallback in case a script ever runs off the edge.
+        # ใช้เพื่อป้องกันหุ่นยนต์เดินชนขอบจอ
         if action == Action.MOVE_FORWARD and self._sensed.get("wall_ahead"):
             action = random.choice([Action.TURN_LEFT, Action.TURN_RIGHT])
                     
@@ -419,12 +358,12 @@ def parse_path(path_str):
     }
     return {turn: mapping[char] for turn, char in enumerate(path_str.replace(' ', ''))}
 def patrol(loops=1, n=1):
-    """เดินลาดตระเวนเป็นวงสี่เหลี่ยม: เดินหน้า n ช่อง แล้วเลี้ยวขวา ทำครบ 4 ด้าน
-    จะกลับมาตำแหน่งและทิศเดิมเป๊ะเสมอ (ไม่ว่า loops จะเป็นเท่าไหร่) จึงคุม
-    turn ให้ตรงเวลาได้แม่นยำเหมือน pace() เดิม แต่ดูเหมือนลาดตระเวนจริงๆ
-    แทนที่จะแกว่งไปมาบนเซลล์เดิม"""
+    # walk in a square pattern, n = number of steps per side, loops = number of squares
     one_loop = ("F" * n + "R") * 4
     return one_loop * loops
+
+def random_action():
+    return random.choice(list(Action))
 
 def build_milestone1_scenario():
     world = World(GRID_SIZE)
@@ -434,7 +373,7 @@ def build_milestone1_scenario():
     world.add_target((7, 7))   # illegal(too many) -> valid ทีหลัง (reuse R6,R7)
     # (7,2) ไม่มี target เลย -> illegal(empty cell) case ของ R3
 
-    world.maybe_generate_random_targets()  # no-op ตอนนี้ เพราะมี target 3 ชิ้นอยู่แล้ว
+    world.maybe_generate_random_targets()  
 
     robots_config = [
         # --- Valid A ตรงๆ ที่ (3,3): ลาดตระเวน 1 รอบก่อนเข้าไปหยิบ ---
@@ -501,7 +440,6 @@ ROBOT_COLORS = {
     5: (107, 207, 127),  # Light Green
     6: (255, 143, 171),  # Pink
     7: (127, 209, 214),  # Cyan
-    # --- New vibrant colors for 8, 9, 10 ---
     8: (255, 167, 38),   # Vibrant Orange
     9: (174, 213, 129),  # Lime Green
     10: (77, 208, 225),  # Bright Teal
@@ -555,6 +493,8 @@ class PygameRenderer:
                     self.speed = max(0.05, self.speed - 0.05)
                 elif event.key == pygame.K_r:
                     self._restart_requested = True
+                elif event.key == pygame.K_m:                       
+                    self.sim.random_mode = not self.sim.random_mode
 
     def _quit(self):
         pygame.quit()
@@ -688,18 +628,21 @@ class PygameRenderer:
         line(f"speed: {self.speed:.2f} turns/s   ({'paused' if self.paused else 'playing'})",
             COLOR_TEXT_DIM, self.font_mono, 26)
 
+        mode_str = "RANDOM" if self.sim.random_mode else "SCRIPTED"
+        line(f"mode:  {mode_str}", (255, 167, 38) if self.sim.random_mode else COLOR_VALID, self.font_mono, 26)
+
         line(f"valid: {self.valid_count}    illegal: {self.illegal_count}", COLOR_TEXT, self.font, 26)
 
         # -----------------------------------------------------
-        # โซน Phase Details (แบ่งเป็น 2 คอลัมน์ จะได้ไม่ล้นจอแนวตั้ง)
+        # โซน Phase Details 
         # -----------------------------------------------------
         line("Current Phase Log:", COLOR_TEXT_DIM, self.font_small, 20)
         
         details = getattr(self, "phase_details", [])
-        start_y_details = y # จำค่า Y ปัจจุบันไว้สำหรับคอลัมน์ที่ 2
+        start_y_details = y 
         
         for index, d in enumerate(details):
-            text_color = (170, 180, 200) # สีสำรองกรณีไม่ใช่ข้อความของหุ่นยนต์
+            text_color = (170, 180, 200) 
             if d.startswith("R"):
                 try:
                     parts = d.split()[0].replace("R", "").replace(":", "")
@@ -712,17 +655,14 @@ class PygameRenderer:
                 line("  " + d, text_color, self.font_small, 18)
             else: # 5 ตัวหลังปัดไปคอลัมน์ขวา
                 surf = self.font_small.render("  " + d, True, text_color)
-                # ขยับแกน x ไปทางขวา 260 pixel, แกน y คำนวณจากตอนเริ่ม
                 self.screen.blit(surf, (x0 + 260, start_y_details + ((index - 5) * 18)))
         
-        # ปรับ Y ข้ามโซนคอลัมน์เพื่อไม่ให้ทับกัน
         if len(details) > 0:
             y = start_y_details + (min(len(details), 5) * 18) + 15
 
         # -----------------------------------------------------
-        # โซน Referee Log (ดึงลงมาให้มีระยะห่างที่ปลอดภัย)
+        # โซน Referee Log 
         # -----------------------------------------------------
-        # เลื่อนลงมาด้านล่างสุด แต่ไม่ให้ทับปุ่มบังคับ
         y = max(y + 10, panel.bottom - 240) 
         line("Referee Log:", COLOR_TEXT_DIM, self.font_small, 18)
         for text, color in self.log_lines[-11:]:
@@ -730,9 +670,8 @@ class PygameRenderer:
             self.screen.blit(surf, (x0, y))
             y += 18
 
-        # โซนคำอธิบายปุ่ม (ล่างสุด)
         y = panel.bottom - 35
-        line("SPACE: play/pause | ->: step | UP/DOWN: speed | R: restart", COLOR_TEXT_DIM, self.font_small, 0)
+        #line("SPACE: play/pause | ->: step | UP/DOWN: speed | R: restart | M: mode", COLOR_TEXT_DIM, self.font_small, 0)
 
 
 def main():
